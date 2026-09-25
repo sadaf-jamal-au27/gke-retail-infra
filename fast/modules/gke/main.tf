@@ -10,7 +10,8 @@ resource "google_service_account" "workload" {
   display_name = "Retail GKE Workload Identity (${var.env})"
 }
 
-# --- Project-level IAM (APIs that are project-scoped) ---
+# Project-level IAM — CI SA (roles/editor) cannot setIamPolicy on project / AR / secrets.
+# Keep these in Terraform so apply does not try to delete imported bindings (403).
 resource "google_project_iam_member" "workload_pubsub" {
   project = var.project_id
   role    = "roles/pubsub.publisher"
@@ -29,7 +30,19 @@ resource "google_project_iam_member" "workload_cloudsql" {
   member  = "serviceAccount:${google_service_account.workload.email}"
 }
 
-# --- Bucket-level IAM (assets only; not project-wide storageAdmin) ---
+resource "google_project_iam_member" "workload_secret_accessor" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.workload.email}"
+}
+
+resource "google_project_iam_member" "workload_artifact_registry" {
+  project = var.project_id
+  role    = "roles/artifactregistry.reader"
+  member  = "serviceAccount:${google_service_account.workload.email}"
+}
+
+# Bucket-level IAM (storage.admin on CI can usually set bucket policy).
 locals {
   assets_bucket = coalesce(var.assets_bucket_name, "${var.project_id}-retail-assets-${var.env}")
 }
@@ -44,16 +57,8 @@ resource "google_storage_bucket_iam_member" "workload_assets" {
   member = "serviceAccount:${google_service_account.workload.email}"
 }
 
-# --- Artifact Registry repo-level (not project-wide reader) ---
-resource "google_artifact_registry_repository_iam_member" "workload_reader" {
-  project    = var.project_id
-  location   = google_artifact_registry_repository.retail.location
-  repository = google_artifact_registry_repository.retail.name
-  role       = "roles/artifactregistry.reader"
-  member     = "serviceAccount:${google_service_account.workload.email}"
-}
-
-# --- Secret Manager secret-level (not project-wide secretAccessor) ---
+# Optional secrets (create only). IAM stays project-level secretAccessor above —
+# CI cannot secretmanager.secrets.setIamPolicy without Secret Admin / Owner.
 resource "google_secret_manager_secret" "app" {
   for_each  = toset(var.secret_ids)
   project   = var.project_id
@@ -66,14 +71,6 @@ resource "google_secret_manager_secret" "app" {
   labels = {
     env = var.env
   }
-}
-
-resource "google_secret_manager_secret_iam_member" "workload_accessor" {
-  for_each  = toset(var.secret_ids)
-  project   = var.project_id
-  secret_id = google_secret_manager_secret.app[each.key].secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.workload.email}"
 }
 
 resource "google_container_cluster" "primary" {
