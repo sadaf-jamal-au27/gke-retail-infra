@@ -1,7 +1,12 @@
+locals {
+  github_repositories = [for name in var.github_repos : "${var.github_org}/${name}"]
+  attribute_condition   = join(" || ", [for repo in local.github_repositories : "assertion.repository == \"${repo}\""])
+}
+
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "${var.pool_id}-${var.env}"
   display_name              = "GitHub Actions (${var.env})"
-  description               = "OIDC pool for ${var.github_org}/${var.github_repo}"
+  description               = "OIDC pool for ${join(", ", local.github_repositories)}"
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
@@ -16,7 +21,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.actor"      = "assertion.actor"
     "attribute.repository" = "assertion.repository"
   }
-  attribute_condition = "assertion.repository == \"${var.github_org}/${var.github_repo}\""
+  attribute_condition = local.attribute_condition
 }
 
 resource "google_service_account" "ci" {
@@ -25,9 +30,11 @@ resource "google_service_account" "ci" {
 }
 
 resource "google_service_account_iam_member" "wif_binding" {
+  for_each = toset(local.github_repositories)
+
   service_account_id = google_service_account.ci.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_org}/${var.github_repo}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${each.value}"
 }
 
 resource "google_project_iam_member" "ci_roles" {

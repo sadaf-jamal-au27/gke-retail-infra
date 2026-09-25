@@ -3,7 +3,11 @@ variable "region" { type = string }
 variable "env" { type = string }
 
 variable "github_org" { type = string }
-variable "github_repo" { type = string }
+
+variable "github_repos" {
+  type        = list(string)
+  description = "GitHub repository names (without org) allowed to impersonate CI SA."
+}
 
 variable "pool_id" {
   type    = string

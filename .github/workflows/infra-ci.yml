@@ -2,13 +2,13 @@ name: infra-ci
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - "fast/**"
       - "scripts/**"
       - ".github/workflows/infra-ci.yml"
   pull_request:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - "fast/**"
       - "scripts/**"
@@ -66,9 +66,7 @@ jobs:
     name: GCP plan/apply
     runs-on: ubuntu-latest
     needs: integration
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop'))
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     environment: ${{ github.event.inputs.environment || 'dev' }}
     env:
       TF_ENV: ${{ github.event.inputs.environment || 'dev' }}

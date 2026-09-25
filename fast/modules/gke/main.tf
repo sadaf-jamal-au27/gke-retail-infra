@@ -34,6 +34,12 @@ resource "google_project_iam_member" "workload_secret_accessor" {
   member  = "serviceAccount:${google_service_account.workload.email}"
 }
 
+resource "google_project_iam_member" "workload_artifact_registry" {
+  project = var.project_id
+  role    = "roles/artifactregistry.reader"
+  member  = "serviceAccount:${google_service_account.workload.email}"
+}
+
 resource "google_container_cluster" "primary" {
   provider = google-beta
 
@@ -83,4 +89,6 @@ resource "google_service_account_iam_member" "workload_identity" {
   service_account_id = google_service_account.workload.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.k8s_namespace}/${var.k8s_service_account}]"
+
+  depends_on = [google_container_cluster.primary]
 }
