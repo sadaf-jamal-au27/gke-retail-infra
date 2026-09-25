@@ -1,2 +1,1 @@
-force_destroy     = true
-enable_versioning = true
+# DEPRECATED: edit fast/datasets/<env>/cloud_storage.tfvars instead.

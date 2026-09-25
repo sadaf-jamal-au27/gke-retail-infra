@@ -1,1 +1,1 @@
-# APIs enabled once per environment
+# DEPRECATED: edit fast/datasets/<env>/project_services.tfvars instead.

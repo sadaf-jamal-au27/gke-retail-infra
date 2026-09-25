@@ -1,7 +1,7 @@
 locals {
   image = coalesce(
     var.image,
-    "${var.region}-docker.pkg.dev/${var.project_id}/retail/bff-api-service:1.0.0"
+    "${var.region}-docker.pkg.dev/${var.project_id}/retail/bff-api-service:1.0.1"
   )
 }
 
@@ -28,6 +28,10 @@ resource "google_cloud_run_v2_service" "bff" {
       env {
         name  = "BFF_MODE"
         value = "cloudrun"
+      }
+      env {
+        name  = "PORT"
+        value = "8080"
       }
 
       resources {

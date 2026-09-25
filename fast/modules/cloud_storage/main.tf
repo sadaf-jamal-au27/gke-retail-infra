@@ -18,13 +18,7 @@ resource "google_storage_bucket" "assets" {
   }
 }
 
-resource "google_storage_bucket" "terraform_state" {
-  name                        = "${var.project_id}-retail-tfstate-${var.env}"
-  location                    = var.region
-  uniform_bucket_level_access = true
-  force_destroy               = var.force_destroy
-
-  versioning {
-    enabled = true
-  }
+# Created by scripts/gcp-bootstrap.sh before first terraform init (chicken-and-egg).
+data "google_storage_bucket" "terraform_state" {
+  name = "${var.project_id}-retail-tfstate-${var.env}"
 }

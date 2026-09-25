@@ -1,1 +1,1 @@
-# default events defined in module
+# DEPRECATED: edit fast/datasets/<env>/pubsub.tfvars instead.

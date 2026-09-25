@@ -6,7 +6,7 @@ variable "github_org" { type = string }
 
 variable "github_repos" {
   type        = list(string)
-  description = "GitHub repository names (without org) allowed to impersonate CI SA."
+  description = "GitHub repository names (without org) that may use this pool."
 }
 
 variable "pool_id" {

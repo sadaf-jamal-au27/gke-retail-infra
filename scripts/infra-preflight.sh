@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Quick preflight before Terraform apply.
+# Quick preflight before Terraform plan/apply (local or CI with WIF).
 set -euo pipefail
 
 ENV="${1:-dev}"
@@ -8,10 +8,6 @@ ENV_TFVARS="${ROOT}/fast/datasets/${ENV}/env.tfvars"
 
 echo "=== Infra preflight (${ENV}) ==="
 
-if ! command -v gcloud >/dev/null; then
-  echo "FAIL: gcloud not installed"
-  exit 1
-fi
 if ! command -v terraform >/dev/null; then
   echo "FAIL: terraform not installed"
   exit 1
@@ -23,27 +19,20 @@ if [[ ! -f "${ENV_TFVARS}" ]]; then
 fi
 
 PROJECT_ID="$(grep '^project_id' "${ENV_TFVARS}" | head -1 | cut -d'"' -f2)"
-ACTIVE="$(gcloud config get-value project 2>/dev/null || true)"
-echo "GCP project (env.tfvars): ${PROJECT_ID}"
-echo "GCP project (gcloud):     ${ACTIVE}"
+echo "Terraform dataset: ${ENV}"
+echo "GCP project:         ${PROJECT_ID}"
 
-if [[ "${ACTIVE}" != "${PROJECT_ID}" ]]; then
-  echo "WARN: gcloud project differs — run: gcloud config set project ${PROJECT_ID}"
-fi
-
-STATE_BUCKET="${PROJECT_ID}-retail-tfstate-${ENV}"
-if gcloud storage buckets describe "gs://${STATE_BUCKET}" >/dev/null 2>&1; then
-  echo "OK: state bucket gs://${STATE_BUCKET}"
+if command -v gcloud >/dev/null; then
+  ACTIVE="$(gcloud config get-value project 2>/dev/null || true)"
+  echo "gcloud project:      ${ACTIVE}"
+  STATE_BUCKET="${PROJECT_ID}-retail-tfstate-${ENV}"
+  if gcloud storage buckets describe "gs://${STATE_BUCKET}" >/dev/null 2>&1; then
+    echo "OK: state bucket gs://${STATE_BUCKET}"
+  else
+    echo "WARN: state bucket missing — run ./scripts/gcp-bootstrap.sh ${ENV}"
+  fi
 else
-  echo "MISSING: state bucket — run ./scripts/gcp-bootstrap.sh ${ENV}"
-fi
-
-GITHUB_ORG="$(grep '^github_org' "${ENV_TFVARS}" | head -1 | cut -d'"' -f2 || true)"
-GITHUB_REPO="$(grep '^github_repo' "${ENV_TFVARS}" | head -1 | cut -d'"' -f2 || true)"
-if [[ "${GITHUB_ORG}" == REPLACE_* || -z "${GITHUB_ORG}" ]]; then
-  echo "WARN: github_org not set (needed for github_wif apply)"
-else
-  echo "OK: github_org=${GITHUB_ORG} github_repo=${GITHUB_REPO}"
+  echo "NOTE: gcloud not in PATH (OK in CI after google-github-actions/auth)"
 fi
 
 if [[ -z "${TF_VAR_database_password:-}" ]]; then
@@ -52,6 +41,4 @@ else
   echo "OK: TF_VAR_database_password is set"
 fi
 
-echo ""
-echo "Next: ./scripts/tf-apply-all.sh ${ENV} plan"
-echo "Guide: docs/INFRA_SETUP.md"
+echo "Preflight done."

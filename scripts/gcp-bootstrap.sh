@@ -13,6 +13,8 @@ fi
 
 PROJECT_ID="$(grep '^project_id' "${ENV_TFVARS}" | head -1 | cut -d'"' -f2)"
 REGION="$(grep '^region' "${ENV_TFVARS}" | head -1 | cut -d'"' -f2)"
+STATE_BUCKET="$(grep '^state_bucket' "${ENV_TFVARS}" | head -1 | cut -d'"' -f2)"
+STATE_BUCKET="${STATE_BUCKET:-${PROJECT_ID}-retail-tfstate-${ENV}}"
 
 if [[ -z "${PROJECT_ID}" || "${PROJECT_ID}" == REPLACE_* ]]; then
   echo "Edit ${ENV_TFVARS} and set a real project_id before bootstrap."
@@ -44,7 +46,6 @@ for api in "${APIS[@]}"; do
   gcloud services enable "${api}" --project "${PROJECT_ID}"
 done
 
-STATE_BUCKET="${PROJECT_ID}-retail-tfstate-${ENV}"
 if ! gcloud storage buckets describe "gs://${STATE_BUCKET}" >/dev/null 2>&1; then
   gcloud storage buckets create "gs://${STATE_BUCKET}" --project="${PROJECT_ID}" --location="${REGION}" --uniform-bucket-level-access
   gcloud storage buckets update "gs://${STATE_BUCKET}" --versioning
@@ -55,9 +56,9 @@ fi
 
 echo ""
 echo "Bootstrap complete. Next:"
-echo "  1. Edit fast/datasets/${ENV}/env.tfvars → github_org, github_repo (for CI/WIF)"
+echo "  1. Edit fast/datasets/${ENV}/*.tfvars (especially github_wif.tfvars)"
 echo "  2. export TF_VAR_database_password='strong-password'"
 echo "  3. ./scripts/tf-apply-all.sh ${ENV} plan"
 echo "  4. ./scripts/tf-apply-all.sh ${ENV} apply"
 echo ""
-echo "Guide: docs/INFRA_SETUP.md"
+echo "Guide: docs/FAST_STRUCTURE.md"

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * FAST landing zone: infra/fast/stages/<stage>/<stack>/ + datasets/<env>/env.tfvars
+ * Regenerate FAST stage roots under infra/fast/stages/ from modules/.
+ * Environment values live ONLY in fast/datasets/<env>/ — not under stages/.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -10,9 +11,9 @@ const infraRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fastRoot = path.join(infraRoot, "fast");
 const datasetsRoot = path.join(fastRoot, "datasets");
 const stagesRoot = path.join(fastRoot, "stages");
+const backendsRoot = path.join(fastRoot, "backends");
 const modulesRoot = path.join(fastRoot, "modules");
 const scaffoldDir = path.join(modulesRoot, "_scaffold");
-const legacyLive = path.join(fastRoot, "stages");
 
 const scaffold = ["backend.tf", "versions.tf", "provider.tf"].map((f) =>
   fs.readFileSync(path.join(scaffoldDir, f), "utf8")
@@ -31,7 +32,79 @@ const STAGE_STACKS = {
   "2-platform": ["gke", "cloudsql", "pubsub", "cloudrun"],
 };
 
-const STACKS = Object.values(STAGE_STACKS).flat();
+const ALL_STACKS = Object.values(STAGE_STACKS).flat();
+
+function stateBucketForEnv(envName, projectId) {
+  const envTfvars = path.join(datasetsRoot, envName, "env.tfvars");
+  if (fs.existsSync(envTfvars)) {
+    const match = fs.readFileSync(envTfvars, "utf8").match(/^state_bucket\s*=\s*"([^"]+)"/m);
+    if (match) return match[1];
+  }
+  return `${projectId}-retail-tfstate-${envName}`;
+}
+
+const DEFAULT_GCP_SERVICES = `services = [
+  "artifactregistry.googleapis.com",
+  "cloudresourcemanager.googleapis.com",
+  "compute.googleapis.com",
+  "container.googleapis.com",
+  "iam.googleapis.com",
+  "iamcredentials.googleapis.com",
+  "pubsub.googleapis.com",
+  "run.googleapis.com",
+  "secretmanager.googleapis.com",
+  "servicenetworking.googleapis.com",
+  "sqladmin.googleapis.com",
+  "storage.googleapis.com",
+]
+`;
+
+/** Default stack tfvars per environment (written once if file missing). */
+const DATASET_STACK_DEFAULTS = {
+  project_services: `# GCP APIs — edit list per environment\n${DEFAULT_GCP_SERVICES}`,
+  cloud_storage: "force_destroy     = true\nenable_versioning = true\n",
+  github_wif: `github_org = "sadaf-jamal-au27"
+github_repos = [
+  "gke-retail-infra",
+  "gke-retail-application",
+  "gke-retail-devops",
+  "gke-microservices",
+]
+pool_id     = "github-pool"
+provider_id = "github-provider"
+`,
+  network: `gke_subnet_cidr           = "10.10.0.0/20"
+pods_cidr                 = "10.20.0.0/16"
+services_cidr             = "10.30.0.0/20"
+sql_subnet_cidr           = "10.11.0.0/24"
+serverless_connector_cidr = "10.8.0.0/28"
+`,
+  gke: `master_ipv4_cidr       = "172.16.0.0/28"
+master_authorized_cidr = "0.0.0.0/0"
+`,
+  cloudsql: `tier              = "db-custom-1-3840"
+availability_type = "ZONAL"
+disk_size_gb      = 20
+`,
+  pubsub: "# Topic names use module defaults\n",
+  cloudrun: "allow_unauthenticated = true\n",
+};
+
+const SERVICE_ACCOUNT_DEFAULTS = {
+  dev: `# GKE Workload Identity (must match Helm namespace + KSA)
+k8s_namespace       = "retail"
+k8s_service_account = "retail-app"
+`,
+  qa: `k8s_namespace       = "retail-qa"
+k8s_service_account = "retail-app"
+`,
+  test: `k8s_namespace       = "retail-test"
+k8s_service_account = "retail-app"
+`,
+  prod: `k8s_namespace       = "retail-prod"
+k8s_service_account = "retail-app"
+`,
+};
 
 const commonVariablesTf = `variable "project_id" {
   type = string
@@ -86,6 +159,7 @@ module "project_services" {
   source     = "${mod}"
   project_id = var.project_id
   region     = var.region
+  services   = var.services
 }
 `;
     case "cloud_storage":
@@ -101,12 +175,14 @@ module "cloud_storage" {
     case "github_wif":
       return `
 module "github_wif" {
-  source      = "${mod}"
-  project_id  = var.project_id
-  region      = var.region
-  env         = var.env
-  github_org  = var.github_org
-  github_repo = var.github_repo
+  source       = "${mod}"
+  project_id   = var.project_id
+  region       = var.region
+  env          = var.env
+  github_org   = var.github_org
+  github_repos = var.github_repos
+  pool_id      = var.pool_id
+  provider_id  = var.provider_id
 }
 `;
     case "network":
@@ -204,26 +280,84 @@ function outputsTf(stack) {
 
 function extraVariablesTf(stack) {
   switch (stack) {
+    case "project_services":
+      return `variable "services" {
+  type = list(string)
+  default = [
+    "artifactregistry.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
+    "compute.googleapis.com",
+    "container.googleapis.com",
+    "iam.googleapis.com",
+    "iamcredentials.googleapis.com",
+    "pubsub.googleapis.com",
+    "run.googleapis.com",
+    "secretmanager.googleapis.com",
+    "servicenetworking.googleapis.com",
+    "sqladmin.googleapis.com",
+    "storage.googleapis.com",
+  ]
+}
+`;
     case "cloud_storage":
       return `variable "force_destroy" {
   type    = bool
   default = false
 }
+
+variable "enable_versioning" {
+  type    = bool
+  default = true
+}
 `;
     case "github_wif":
       return `variable "github_org" { type = string }
-variable "github_repo" { type = string }
+
+variable "github_repos" {
+  type = list(string)
+}
+
+variable "pool_id" {
+  type    = string
+  default = "github-pool"
+}
+
+variable "provider_id" {
+  type    = string
+  default = "github-provider"
+}
 `;
     case "network":
-      return `variable "gke_subnet_cidr" { type = string }
-variable "pods_cidr" { type = string }
-variable "services_cidr" { type = string }
-variable "sql_subnet_cidr" { type = string }
-variable "serverless_connector_cidr" { type = string }
+      return `variable "gke_subnet_cidr" {
+  type    = string
+  default = "10.10.0.0/20"
+}
+variable "pods_cidr" {
+  type    = string
+  default = "10.20.0.0/16"
+}
+variable "services_cidr" {
+  type    = string
+  default = "10.30.0.0/20"
+}
+variable "sql_subnet_cidr" {
+  type    = string
+  default = "10.11.0.0/24"
+}
+variable "serverless_connector_cidr" {
+  type    = string
+  default = "10.8.0.0/28"
+}
 `;
     case "gke":
-      return `variable "master_ipv4_cidr" { type = string }
-variable "master_authorized_cidr" { type = string }
+      return `variable "master_ipv4_cidr" {
+  type    = string
+  default = "172.16.0.0/28"
+}
+variable "master_authorized_cidr" {
+  type    = string
+  default = "0.0.0.0/0"
+}
 variable "k8s_namespace" {
   type    = string
   default = "retail"
@@ -238,9 +372,18 @@ variable "k8s_service_account" {
   type      = string
   sensitive = true
 }
-variable "tier" { type = string }
-variable "availability_type" { type = string }
-variable "disk_size_gb" { type = number }
+variable "tier" {
+  type    = string
+  default = "db-custom-1-3840"
+}
+variable "availability_type" {
+  type    = string
+  default = "ZONAL"
+}
+variable "disk_size_gb" {
+  type    = number
+  default = 20
+}
 `;
     case "cloudrun":
       return `variable "allow_unauthenticated" {
@@ -256,6 +399,7 @@ variable "disk_size_gb" { type = number }
 for (const env of ENVIRONMENTS) {
   const envDir = path.join(datasetsRoot, env.name);
   fs.mkdirSync(envDir, { recursive: true });
+
   const existing = path.join(envDir, "env.tfvars");
   if (!fs.existsSync(existing)) {
     fs.writeFileSync(
@@ -264,35 +408,101 @@ for (const env of ENVIRONMENTS) {
 region       = "asia-south1"
 env          = "${env.name}"
 state_bucket = "${env.project_id}-retail-tfstate-${env.name}"
-
-github_org  = "REPLACE_GITHUB_ORG"
-github_repo = "REPLACE_GITHUB_REPO"
 `
     );
   }
 
-  for (const [stage, stacks] of Object.entries(STAGE_STACKS)) {
-    for (const stack of stacks) {
-      const stackDir = path.join(stagesRoot, stage, stack);
-      fs.mkdirSync(stackDir, { recursive: true });
+  for (const [stack, body] of Object.entries(DATASET_STACK_DEFAULTS)) {
+    const stackTfvars = path.join(envDir, `${stack}.tfvars`);
+    if (!fs.existsSync(stackTfvars)) {
+      fs.writeFileSync(stackTfvars, body);
+    }
+  }
 
-      fs.writeFileSync(path.join(stackDir, "backend.tf"), scaffold[0]);
-      fs.writeFileSync(path.join(stackDir, "versions.tf"), scaffold[1]);
-      fs.writeFileSync(path.join(stackDir, "provider.tf"), scaffold[2]);
-      fs.writeFileSync(path.join(stackDir, "variables.tf"), commonVariablesTf + extraVariablesTf(stack));
-      fs.writeFileSync(path.join(stackDir, "main.tf"), mainTf(stack).trim() + "\n");
-      fs.writeFileSync(path.join(stackDir, "outputs.tf"), outputsTf(stack));
+  const saTfvars = path.join(envDir, "service_account.tfvars");
+  if (!fs.existsSync(saTfvars)) {
+    fs.writeFileSync(
+      saTfvars,
+      SERVICE_ACCOUNT_DEFAULTS[env.name] ??
+        `k8s_namespace       = "retail-${env.name}"
+k8s_service_account = "retail-app"
+`
+    );
+  }
+}
 
-      const targetTfvars = path.join(stackDir, `${stack}.tfvars`);
-      const legacyTfvars = path.join(stagesRoot, stage, stack, `${stack}.tfvars`);
-      const fastTfvars = path.join(stagesRoot, stage, stack, `${stack}.tfvars`);
-      if (!fs.existsSync(fastTfvars) && fs.existsSync(legacyTfvars)) {
-        fs.copyFileSync(legacyTfvars, targetTfvars);
-      } else if (!fs.existsSync(targetTfvars)) {
-        fs.writeFileSync(targetTfvars, `# Overrides for ${stack}\n`);
-      }
+for (const env of ENVIRONMENTS) {
+  const bucket = stateBucketForEnv(env.name, env.project_id);
+  const backendDir = path.join(backendsRoot, env.name);
+  fs.mkdirSync(backendDir, { recursive: true });
+  for (const stack of ALL_STACKS) {
+    const hcl = `# Remote state for stack "${stack}" (env: ${env.name})
+# Regenerate: node infra/scripts/generate-fast-stages.mjs
+# Must match state_bucket in datasets/${env.name}/env.tfvars
+
+bucket = "${bucket}"
+prefix = "${env.name}/${stack}"
+`;
+    fs.writeFileSync(path.join(backendDir, `${stack}.hcl`), hcl);
+  }
+}
+
+for (const [stage, stacks] of Object.entries(STAGE_STACKS)) {
+  for (const stack of stacks) {
+    const stackDir = path.join(stagesRoot, stage, stack);
+    fs.mkdirSync(stackDir, { recursive: true });
+
+    fs.writeFileSync(path.join(stackDir, "backend.tf"), scaffold[0]);
+    fs.writeFileSync(path.join(stackDir, "versions.tf"), scaffold[1]);
+    fs.writeFileSync(path.join(stackDir, "provider.tf"), scaffold[2]);
+    fs.writeFileSync(path.join(stackDir, "variables.tf"), commonVariablesTf + extraVariablesTf(stack));
+    fs.writeFileSync(path.join(stackDir, "main.tf"), mainTf(stack).trim() + "\n");
+    fs.writeFileSync(path.join(stackDir, "outputs.tf"), outputsTf(stack));
+
+    const legacyTfvars = path.join(stackDir, `${stack}.tfvars`);
+    if (fs.existsSync(legacyTfvars)) {
+      fs.writeFileSync(
+        legacyTfvars,
+        `# DEPRECATED: edit fast/datasets/<env>/${stack}.tfvars instead.\n`
+      );
     }
   }
 }
 
-console.log("Generated infra/fast/stages/{0-bootstrap,1-network,2-platform}/<stack>/");
+const datasetsReadme = `# Environment datasets (single source of truth)
+
+Edit values here — not \`stages/**/<stack>.tfvars\`.
+
+| File | Purpose |
+|------|---------|
+| \`env.tfvars\` | project_id, region, env, state_bucket |
+| \`<stack>.tfvars\` | Stack-specific sizing, CIDRs, GitHub org/repos |
+| \`service_account.tfvars\` | GKE Workload Identity (used by \`gke\` stack) |
+
+Remote state bucket/prefix: **\`fast/backends/<env>/<stack>.hcl\`** (generated; keep in sync with \`state_bucket\` here).
+
+See \`docs/FAST_STRUCTURE.md\`.
+`;
+fs.writeFileSync(path.join(datasetsRoot, "README.md"), datasetsReadme);
+
+const backendsReadme = `# Terraform GCS backend config (generated)
+
+One \`.hcl\` per stack per environment. Used by \`tf.sh\`:
+
+\`\`\`bash
+terraform init -backend-config=../../backends/dev/gke.hcl
+\`\`\`
+
+| Path | Meaning |
+|------|---------|
+| \`backends/<env>/<stack>.hcl\` | \`bucket\` + \`prefix\` for that stack's state |
+
+**Source of truth for bucket name:** \`datasets/<env>/env.tfvars\` → \`state_bucket\`.
+
+After changing \`state_bucket\`, run \`node infra/scripts/generate-fast-stages.mjs\`.
+
+Stage roots only declare \`backend "gcs" {}\` in \`backend.tf\` — settings live here.
+`;
+fs.writeFileSync(path.join(backendsRoot, "README.md"), backendsReadme);
+
+console.log("Generated stages, backends/*.hcl, and dataset templates.");

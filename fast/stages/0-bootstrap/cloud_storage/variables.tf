@@ -18,3 +18,8 @@ variable "force_destroy" {
   type    = bool
   default = false
 }
+
+variable "enable_versioning" {
+  type    = bool
+  default = true
+}

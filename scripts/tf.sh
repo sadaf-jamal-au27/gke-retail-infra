@@ -23,43 +23,67 @@ esac
 
 DIR="${FAST}/stages/${STAGE}/${STACK}"
 ENV_TFVARS="${FAST}/datasets/${ENV}/env.tfvars"
-STACK_TFVARS="${DIR}/${STACK}.tfvars"
+BACKEND_HCL="${FAST}/backends/${ENV}/${STACK}.hcl"
+DATASET_STACK_TFVARS="${FAST}/datasets/${ENV}/${STACK}.tfvars"
+LEGACY_STACK_TFVARS="${DIR}/${STACK}.tfvars"
 
 if [[ ! -d "${DIR}" ]]; then
   echo "Missing ${DIR}. Run: node infra/scripts/generate-fast-stages.mjs"
   exit 1
 fi
 
-PROJECT_ID="$(grep '^project_id' "${ENV_TFVARS}" | head -1 | cut -d'"' -f2)"
-STATE_BUCKET="${PROJECT_ID}-retail-tfstate-${ENV}"
-PREFIX="${ENV}/${STACK}"
+if [[ ! -f "${BACKEND_HCL}" ]]; then
+  echo "Missing ${BACKEND_HCL}. Run: node infra/scripts/generate-fast-stages.mjs"
+  exit 1
+fi
 
 cd "${DIR}"
 
 if [[ ! -d .terraform ]] || [[ "${ACTION}" == "init" ]]; then
-  terraform init -reconfigure \
-    -backend-config="bucket=${STATE_BUCKET}" \
-    -backend-config="prefix=${PREFIX}"
+  terraform init -reconfigure -input=false -backend-config="${BACKEND_HCL}"
 fi
 
 if [[ "${ACTION}" == "init" ]]; then
   exit 0
 fi
 
-DATASET_STACK_TFVARS="${FAST}/datasets/${ENV}/${STACK}.tfvars"
-
 VAR_ARGS=(-var-file="${ENV_TFVARS}")
 if [[ -f "${DATASET_STACK_TFVARS}" ]]; then
   VAR_ARGS+=(-var-file="${DATASET_STACK_TFVARS}")
+elif [[ -f "${LEGACY_STACK_TFVARS}" ]]; then
+  echo "WARN: using legacy ${LEGACY_STACK_TFVARS} — move values to ${DATASET_STACK_TFVARS}" >&2
+  VAR_ARGS+=(-var-file="${LEGACY_STACK_TFVARS}")
 fi
-if [[ -f "${STACK_TFVARS}" ]]; then
-  VAR_ARGS+=(-var-file="${STACK_TFVARS}")
+SERVICE_ACCOUNT_TFVARS="${FAST}/datasets/${ENV}/service_account.tfvars"
+if [[ "${STACK}" == "gke" ]] && [[ -f "${SERVICE_ACCOUNT_TFVARS}" ]]; then
+  VAR_ARGS+=(-var-file="${SERVICE_ACCOUNT_TFVARS}")
+fi
+if [[ "${STACK}" == "cloudsql" ]]; then
+  if [[ -z "${TF_VAR_database_password:-}" ]]; then
+    echo "ERROR: export TF_VAR_database_password before cloudsql plan/apply"
+    exit 1
+  fi
+  VAR_ARGS+=(-var="database_password=${TF_VAR_database_password}")
 fi
 
 case "${ACTION}" in
-  plan|apply|destroy|refresh)
+  plan)
+    extra=(-input=false -detailed-exitcode)
+    if [[ -n "${TF_PLAN_OUT:-}" ]]; then
+      extra+=(-out="${TF_PLAN_OUT}")
+    fi
+    terraform plan "${VAR_ARGS[@]}" "${extra[@]}"
+    ;;
+  apply)
+    if [[ -n "${TF_PLAN_IN:-}" ]]; then
+      terraform apply -input=false "${TF_PLAN_IN}"
+    else
+      terraform apply "${VAR_ARGS[@]}" -input=false -auto-approve
+    fi
+    ;;
+  destroy|refresh)
     extra=(-input=false)
-    if [[ "${ACTION}" == "apply" || "${ACTION}" == "destroy" ]]; then
+    if [[ "${ACTION}" == "destroy" ]]; then
       extra+=(-auto-approve)
     fi
     terraform "${ACTION}" "${VAR_ARGS[@]}" "${extra[@]}"

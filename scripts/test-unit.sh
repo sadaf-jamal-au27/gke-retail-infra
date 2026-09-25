@@ -14,13 +14,14 @@ terraform fmt -check -recursive "${FAST}/modules" "${FAST}/stages"
 while IFS= read -r dir; do
   stack="$(basename "${dir}")"
   echo "-- validate ${stack} --"
+  dataset_tfvars="${FAST}/datasets/${ENV}/${stack}.tfvars"
   (
     cd "${dir}"
-    rm -rf .terraform
     terraform init -backend=false -input=false >/dev/null
     args=(-var-file="${ENV_TFVARS}")
-    tfvars="${dir}/${stack}.tfvars"
-    [[ -f "${tfvars}" ]] && args+=(-var-file="${tfvars}")
+    if [[ -f "${dataset_tfvars}" ]]; then
+      args+=(-var-file="${dataset_tfvars}")
+    fi
     if [[ "${stack}" == "cloudsql" ]]; then
       args+=(-var="database_password=unit-test-only")
     fi
@@ -32,7 +33,6 @@ if [[ -d "${ROOT}/tests/unit" ]]; then
   echo "-- terraform test (unit) --"
   (
     cd "${ROOT}/tests/unit"
-    rm -rf .terraform
     terraform init -backend=false -input=false >/dev/null
     terraform test
   )
