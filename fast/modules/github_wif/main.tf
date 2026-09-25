@@ -1,6 +1,6 @@
 locals {
   github_repositories = [for name in var.github_repos : "${var.github_org}/${name}"]
-  attribute_condition   = join(" || ", [for repo in local.github_repositories : "assertion.repository == \"${repo}\""])
+  attribute_condition = join(" || ", [for repo in local.github_repositories : "assertion.repository == \"${repo}\""])
 }
 
 resource "google_iam_workload_identity_pool" "github" {
