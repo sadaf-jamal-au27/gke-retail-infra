@@ -3,11 +3,11 @@
 set -euo pipefail
 
 ENV="${1:-dev}"
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-ENV_TFVARS="${ROOT}/infra/fast/datasets/${ENV}/env.tfvars"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_TFVARS="${ROOT}/fast/datasets/${ENV}/env.tfvars"
 
 if [[ ! -f "${ENV_TFVARS}" ]]; then
-  echo "Missing ${ENV_TFVARS}. Run: node infra/scripts/generate-fast-stages.mjs"
+  echo "Missing ${ENV_TFVARS}. Run: node scripts/generate-fast-stages.mjs"
   exit 1
 fi
 
@@ -55,9 +55,9 @@ fi
 
 echo ""
 echo "Bootstrap complete. Next:"
-  echo "  1. Edit infra/fast/datasets/${ENV}/env.tfvars → github_org, github_repo"
+echo "  1. Edit fast/datasets/${ENV}/env.tfvars → github_org, github_repo (for CI/WIF)"
 echo "  2. export TF_VAR_database_password='strong-password'"
-echo "  3. ./infra/scripts/tf-apply-all.sh ${ENV} plan"
-echo "  4. ./infra/scripts/tf-apply-all.sh ${ENV} apply"
+echo "  3. ./scripts/tf-apply-all.sh ${ENV} plan"
+echo "  4. ./scripts/tf-apply-all.sh ${ENV} apply"
 echo ""
 echo "Guide: docs/INFRA_SETUP.md"

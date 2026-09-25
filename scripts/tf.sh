@@ -4,6 +4,8 @@ set -euo pipefail
 ENV="${1:?Usage: tf.sh <dev|qa|test|prod> <stack> <init|plan|apply|destroy|output>}"
 STACK="${2:?stack: project_services|cloud_storage|github_wif|network|gke|cloudsql|pubsub|cloudrun}"
 ACTION="${3:-plan}"
+shift 3 || true
+EXTRA_ARGS=("$@")
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FAST="${ROOT}/fast"
@@ -44,7 +46,12 @@ if [[ "${ACTION}" == "init" ]]; then
   exit 0
 fi
 
+DATASET_STACK_TFVARS="${FAST}/datasets/${ENV}/${STACK}.tfvars"
+
 VAR_ARGS=(-var-file="${ENV_TFVARS}")
+if [[ -f "${DATASET_STACK_TFVARS}" ]]; then
+  VAR_ARGS+=(-var-file="${DATASET_STACK_TFVARS}")
+fi
 if [[ -f "${STACK_TFVARS}" ]]; then
   VAR_ARGS+=(-var-file="${STACK_TFVARS}")
 fi
@@ -58,7 +65,7 @@ case "${ACTION}" in
     terraform "${ACTION}" "${VAR_ARGS[@]}" "${extra[@]}"
     ;;
   output|validate|fmt)
-    terraform "${ACTION}" "$@"
+    terraform "${ACTION}" "${EXTRA_ARGS[@]}"
     ;;
   *)
     terraform "${ACTION}" "${VAR_ARGS[@]}"
