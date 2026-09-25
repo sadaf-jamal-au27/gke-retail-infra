@@ -1,5 +1,5 @@
-# Manual apply only (Actions → Infra · Terraform apply). Use GitHub Environment reviewers on dev/prod.
-name: Infra · Terraform apply
+# Manual only: plan to files, then terraform apply those plans (workflow_dispatch).
+name: Infra Terraform Apply
 
 on:
   workflow_dispatch:
@@ -32,7 +32,6 @@ permissions:
 
 env:
   TF_VERSION: "1.10.2"
-  FAST_ROOT: fast
 
 jobs:
   terraform-apply:
@@ -51,26 +50,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch }}
+
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_CI_SERVICE_ACCOUNT }}
+
       - uses: google-github-actions/setup-gcloud@v2
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
-      - name: terraform plan (saved plans)
-        uses: ./.github/actions/terraform-fast
-        with:
-          fast_root: ${{ env.FAST_ROOT }}
-          tf_env: ${{ env.TF_ENV }}
-          command: plan
-          plan_directory: ${{ env.TF_PLAN_DIR }}
-      - name: terraform apply (saved plans)
-        uses: ./.github/actions/terraform-fast
-        with:
-          fast_root: ${{ env.FAST_ROOT }}
-          tf_env: ${{ env.TF_ENV }}
-          command: apply
-          plan_directory: ${{ env.TF_PLAN_DIR }}
+
+      - name: terraform plan then apply (saved plans)
+        run: |
+          set -euo pipefail
+          chmod +x scripts/tf.sh scripts/tf-plan-all.sh scripts/ci-gcp-apply.sh
+          ./scripts/ci-gcp-apply.sh "${{ env.TF_ENV }}"
