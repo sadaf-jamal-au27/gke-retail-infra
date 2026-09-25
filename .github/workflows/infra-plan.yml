@@ -141,13 +141,36 @@ jobs:
           chmod +x scripts/ensure-state-bucket.sh
           ./scripts/ensure-state-bucket.sh "${TF_ENV}"
 
-      - name: terraform init and plan (all stacks)
+      # Each FAST stack = separate Terraform root + GCS state prefix; tf.sh init runs before plan.
+      - name: terraform plan (FAST stacks)
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x scripts/tf.sh scripts/tf-plan-all.sh
+          chmod +x scripts/tf.sh
           mkdir -p "${TF_PLAN_DIR}"
-          ./scripts/tf-plan-all.sh "${TF_ENV}"
+          stacks=(project_services cloud_storage github_wif network gke cloudsql pubsub)
+          overall=0
+          for stack in "${stacks[@]}"; do
+            echo "::group::${stack} — terraform init + plan"
+            export TF_PLAN_OUT="${TF_PLAN_DIR}/${stack}.tfplan"
+            set +e
+            ./scripts/tf.sh "${TF_ENV}" "${stack}" plan
+            ec=$?
+            set -e
+            if [[ "${ec}" -eq 1 ]]; then
+              exit 1
+            fi
+            if [[ "${ec}" -eq 2 ]]; then
+              overall=2
+            fi
+            if [[ "${ec}" -eq 0 ]]; then
+              rm -f "${TF_PLAN_OUT}"
+            fi
+            echo "::endgroup::"
+          done
+          if [[ "${overall}" -eq 2 ]]; then
+            echo "One or more stacks have pending changes."
+          fi
 
       - name: Upload plan artifacts
         if: always()

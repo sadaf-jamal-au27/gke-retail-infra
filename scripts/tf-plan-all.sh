@@ -16,9 +16,7 @@ fi
 
 overall=0
 for stack in "${STACKS[@]}"; do
-  echo "==== FAST ${ENV}/${stack}: init + plan ===="
-  "${SCRIPT_DIR}/tf.sh" "${ENV}" "${stack}" init
-
+  echo "==== FAST ${ENV}/${stack}: plan (init if needed) ===="
   if [[ -n "${PLAN_DIR}" ]]; then
     export TF_PLAN_OUT="${PLAN_DIR}/${stack}.tfplan"
   else
