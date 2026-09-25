@@ -63,6 +63,13 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
+      - name: Ensure GCS state bucket exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ensure-state-bucket.sh
+          ./scripts/ensure-state-bucket.sh "${TF_ENV}"
+
       - name: terraform plan then apply (saved plans)
         run: |
           set -euo pipefail
