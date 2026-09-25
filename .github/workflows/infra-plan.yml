@@ -26,7 +26,7 @@ on:
         options: [dev, qa, test, prod]
 
 concurrency:
-  group: infra-plan-${{ github.event.pull_request.number || github.run_id }}
+  group: infra-plan-${{ github.repository }}-${{ github.base_ref == 'main' && 'prod' || 'dev' }}
   cancel-in-progress: true
 
 permissions:
@@ -106,6 +106,7 @@ jobs:
       id-token: write
     env:
       TF_VAR_database_password: ${{ secrets.TF_VAR_DATABASE_PASSWORD }}
+      TF_PLAN_LOCK: "false"
     steps:
       - uses: actions/checkout@v4
 

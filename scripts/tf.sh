@@ -72,6 +72,9 @@ case "${ACTION}" in
     if [[ -n "${TF_PLAN_OUT:-}" ]]; then
       extra+=(-out="${TF_PLAN_OUT}")
     fi
+    if [[ "${TF_PLAN_LOCK:-true}" == "false" ]]; then
+      extra+=(-lock=false)
+    fi
     terraform plan "${VAR_ARGS[@]}" "${extra[@]}"
     ;;
   apply)
