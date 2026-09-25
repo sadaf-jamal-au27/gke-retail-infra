@@ -1,12 +1,14 @@
-# Apply after merge to develop/main (push), or manual workflow_dispatch.
+# Apply when a PR merges to develop/main (same paths as plan), or manual dispatch.
 name: Infra Terraform Apply
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches: [develop, main]
     paths:
       - "fast/**"
       - "scripts/**"
+      - ".github/workflows/infra-plan.yml"
       - ".github/workflows/infra-apply.yml"
   workflow_dispatch:
     inputs:
@@ -30,7 +32,7 @@ on:
         options: [dev, qa, test, prod]
 
 concurrency:
-  group: infra-apply-${{ github.repository }}-${{ github.ref_name }}
+  group: infra-apply-${{ github.repository }}-${{ github.event.pull_request.base.ref || github.event.inputs.branch || 'manual' }}
   cancel-in-progress: false
 
 permissions:
@@ -42,9 +44,10 @@ env:
 jobs:
   terraform-apply:
     name: Terraform apply (GCP)
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.github_environment || (github.ref_name == 'main' && 'prod' || 'dev') }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.github_environment || (github.event.pull_request.base.ref == 'main' && 'prod' || 'dev') }}
     permissions:
       contents: read
       id-token: write
@@ -57,7 +60,7 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             tf_env="${{ github.event.inputs.tf_env }}"
-          elif [[ "${{ github.ref_name }}" == "main" ]]; then
+          elif [[ "${{ github.event.pull_request.base.ref }}" == "main" ]]; then
             tf_env="prod"
           else
             tf_env="dev"
@@ -67,7 +70,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.event.pull_request.merge_commit_sha }}
 
       - uses: google-github-actions/auth@v2
         with:
