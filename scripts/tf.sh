@@ -47,6 +47,29 @@ if [[ "${ACTION}" == "init" ]]; then
   exit 0
 fi
 
+if [[ "${STACK}" == "cloudsql" ]] && [[ "${ACTION}" != "output" ]]; then
+  if [[ -z "${TF_VAR_database_password:-}" ]]; then
+    echo "ERROR: export TF_VAR_database_password before cloudsql plan/apply"
+    exit 1
+  fi
+fi
+
+# Required vars must be set for plan/apply/import (root module has no defaults).
+VAR_ARGS=(-var-file="${ENV_TFVARS}")
+if [[ -f "${DATASET_STACK_TFVARS}" ]]; then
+  VAR_ARGS+=(-var-file="${DATASET_STACK_TFVARS}")
+elif [[ -f "${LEGACY_STACK_TFVARS}" ]]; then
+  echo "WARN: using legacy ${LEGACY_STACK_TFVARS} — move values to ${DATASET_STACK_TFVARS}" >&2
+  VAR_ARGS+=(-var-file="${LEGACY_STACK_TFVARS}")
+fi
+SERVICE_ACCOUNT_TFVARS="${FAST}/datasets/${ENV}/service_account.tfvars"
+if [[ "${STACK}" == "gke" ]] && [[ -f "${SERVICE_ACCOUNT_TFVARS}" ]]; then
+  VAR_ARGS+=(-var-file="${SERVICE_ACCOUNT_TFVARS}")
+fi
+if [[ "${STACK}" == "cloudsql" ]] && [[ "${ACTION}" != "output" ]]; then
+  VAR_ARGS+=(-var="database_password=${TF_VAR_database_password}")
+fi
+
 # Assets bucket may exist in GCP from a prior partial apply; import into state before plan/apply.
 adopt_cloud_storage_assets() {
   local project_id bucket addr
@@ -64,7 +87,7 @@ adopt_cloud_storage_assets() {
     return 0
   fi
   echo "terraform import ${addr} ${bucket}"
-  terraform import -input=false "${addr}" "${bucket}"
+  terraform import -input=false "${VAR_ARGS[@]}" "${addr}" "${bucket}"
 }
 
 if [[ "${STACK}" == "cloud_storage" ]]; then
@@ -75,28 +98,6 @@ if [[ "${STACK}" == "cloud_storage" ]]; then
   if [[ "${ACTION}" == "plan" || "${ACTION}" == "apply" ]]; then
     adopt_cloud_storage_assets
   fi
-fi
-
-if [[ "${STACK}" == "cloudsql" ]] && [[ "${ACTION}" != "output" ]]; then
-  if [[ -z "${TF_VAR_database_password:-}" ]]; then
-    echo "ERROR: export TF_VAR_database_password before cloudsql plan/apply"
-    exit 1
-  fi
-fi
-
-VAR_ARGS=(-var-file="${ENV_TFVARS}")
-if [[ -f "${DATASET_STACK_TFVARS}" ]]; then
-  VAR_ARGS+=(-var-file="${DATASET_STACK_TFVARS}")
-elif [[ -f "${LEGACY_STACK_TFVARS}" ]]; then
-  echo "WARN: using legacy ${LEGACY_STACK_TFVARS} — move values to ${DATASET_STACK_TFVARS}" >&2
-  VAR_ARGS+=(-var-file="${LEGACY_STACK_TFVARS}")
-fi
-SERVICE_ACCOUNT_TFVARS="${FAST}/datasets/${ENV}/service_account.tfvars"
-if [[ "${STACK}" == "gke" ]] && [[ -f "${SERVICE_ACCOUNT_TFVARS}" ]]; then
-  VAR_ARGS+=(-var-file="${SERVICE_ACCOUNT_TFVARS}")
-fi
-if [[ "${STACK}" == "cloudsql" ]] && [[ "${ACTION}" != "output" ]]; then
-  VAR_ARGS+=(-var="database_password=${TF_VAR_database_password}")
 fi
 
 case "${ACTION}" in
