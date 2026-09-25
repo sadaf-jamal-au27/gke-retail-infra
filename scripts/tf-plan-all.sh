@@ -38,7 +38,8 @@ done
 
 if [[ "${overall}" -eq 2 ]]; then
   echo "Plan complete: changes pending for one or more stacks."
-  exit 2
+  # Exit 0 for CI (terraform plan -detailed-exitcode 2 = diff exists, not failure).
+  exit 0
 fi
 echo "Plan complete: no changes."
 exit 0
