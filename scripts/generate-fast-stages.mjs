@@ -3,6 +3,7 @@
  * Regenerate FAST stage roots under infra/fast/stages/ from modules/.
  * Environment values live ONLY in fast/datasets/<env>/ — not under stages/.
  */
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -201,29 +202,46 @@ module "network" {
 `;
     case "gke":
       return `${remoteStateNetwork()}
+locals {
+  network_name          = try(data.terraform_remote_state.network.outputs.network_name, null)
+  gke_subnet_name       = try(data.terraform_remote_state.network.outputs.gke_subnet_name, null)
+  pods_range_name       = try(data.terraform_remote_state.network.outputs.pods_range_name, null)
+  services_range_name   = try(data.terraform_remote_state.network.outputs.services_range_name, null)
+  network_outputs_ready = local.network_name != null
+}
+
 module "gke" {
-  source                  = "${mod}"
-  project_id              = var.project_id
-  region                  = var.region
-  env                     = var.env
-  network_name            = data.terraform_remote_state.network.outputs.network_name
-  subnet_name             = data.terraform_remote_state.network.outputs.gke_subnet_name
-  pods_range_name         = data.terraform_remote_state.network.outputs.pods_range_name
-  services_range_name     = data.terraform_remote_state.network.outputs.services_range_name
-  master_ipv4_cidr        = var.master_ipv4_cidr
-  master_authorized_cidr  = var.master_authorized_cidr
-  k8s_namespace           = var.k8s_namespace
-  k8s_service_account     = var.k8s_service_account
+  count = local.network_outputs_ready ? 1 : 0
+
+  source                 = "${mod}"
+  project_id             = var.project_id
+  region                 = var.region
+  env                    = var.env
+  network_name           = local.network_name
+  subnet_name            = local.gke_subnet_name
+  pods_range_name        = local.pods_range_name
+  services_range_name    = local.services_range_name
+  master_ipv4_cidr       = var.master_ipv4_cidr
+  master_authorized_cidr = var.master_authorized_cidr
+  k8s_namespace          = var.k8s_namespace
+  k8s_service_account    = var.k8s_service_account
 }
 `;
     case "cloudsql":
       return `${remoteStateNetwork()}
+locals {
+  network_id            = try(data.terraform_remote_state.network.outputs.network_id, null)
+  network_outputs_ready = local.network_id != null
+}
+
 module "cloudsql" {
+  count = local.network_outputs_ready ? 1 : 0
+
   source            = "${mod}"
   project_id        = var.project_id
   region            = var.region
   env               = var.env
-  network_id        = data.terraform_remote_state.network.outputs.network_id
+  network_id        = local.network_id
   database_password = var.database_password
   tier              = var.tier
   availability_type = var.availability_type
@@ -241,13 +259,21 @@ module "pubsub" {
 `;
     case "cloudrun":
       return `${remoteStateNetwork()}${remoteStateGke()}
+locals {
+  vpc_connector_id     = try(data.terraform_remote_state.network.outputs.serverless_connector_id, null)
+  workload_gsa_email   = try(data.terraform_remote_state.gke.outputs.workload_gsa_email, null)
+  cloudrun_ready       = local.vpc_connector_id != null && local.workload_gsa_email != null
+}
+
 module "cloudrun" {
+  count = local.cloudrun_ready ? 1 : 0
+
   source                = "${mod}"
   project_id            = var.project_id
   region                = var.region
   env                   = var.env
-  bff_sa_email          = data.terraform_remote_state.gke.outputs.workload_gsa_email
-  vpc_connector_id      = data.terraform_remote_state.network.outputs.serverless_connector_id
+  bff_sa_email          = local.workload_gsa_email
+  vpc_connector_id      = local.vpc_connector_id
   allow_unauthenticated = var.allow_unauthenticated
 }
 `;
@@ -269,12 +295,16 @@ function outputsTf(stack) {
     cloudrun: ["bff_url", "bff_name"],
   };
   return (map[stack] ?? [])
-    .map(
-      (o) => `output "${o}" {
-  value = module.${name}.${o}
+    .map((o) => {
+      const usesCount = ["gke", "cloudsql", "cloudrun"].includes(stack);
+      const ref = usesCount
+        ? `try(module.${name}[0].${o}, null)`
+        : `module.${name}.${o}`;
+      return `output "${o}" {
+  value = ${ref}
 }
-`
-    )
+`;
+    })
     .join("\n");
 }
 
@@ -504,5 +534,15 @@ After changing \`state_bucket\`, run \`node infra/scripts/generate-fast-stages.m
 Stage roots only declare \`backend "gcs" {}\` in \`backend.tf\` — settings live here.
 `;
 fs.writeFileSync(path.join(backendsRoot, "README.md"), backendsReadme);
+
+try {
+  execSync(`terraform fmt -recursive "${modulesRoot}" "${stagesRoot}"`, {
+    stdio: "inherit",
+  });
+} catch {
+  console.warn(
+    "Warning: terraform fmt failed (install Terraform 1.x to format generated stages)."
+  );
+}
 
 console.log("Generated stages, backends/*.hcl, and dataset templates.");

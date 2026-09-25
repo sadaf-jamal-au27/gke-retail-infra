@@ -1,64 +1,77 @@
-# Branching: merge to develop → apply (dev) | merge to main → apply (prod)
-name: infra-apply
+# Manual only: plan to files, then terraform apply those plans (workflow_dispatch).
+name: Infra Terraform Apply
 
 on:
-  push:
-    branches: [develop, main]
-    paths:
-      - "fast/**"
-      - "scripts/**"
-      - "tests/**"
-      - ".github/workflows/infra-plan.yml"
-      - ".github/workflows/infra-apply.yml"
   workflow_dispatch:
     inputs:
+      branch:
+        description: Branch to deploy (must match merged PR target)
+        required: true
+        type: choice
+        default: develop
+        options: [develop, main]
       github_environment:
         description: GitHub Environment (secrets)
         required: true
         type: choice
+        default: dev
         options: [dev, prod]
       tf_env:
         description: Terraform dataset (GCP)
         required: true
         type: choice
+        default: dev
         options: [dev, qa, test, prod]
 
 concurrency:
-  group: infra-apply-${{ github.ref_name }}-${{ github.event.inputs.tf_env || 'dev' }}
+  group: infra-apply-${{ github.run_id }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
+env:
+  TF_VERSION: "1.10.2"
+
 jobs:
   terraform-apply:
     name: Terraform apply (GCP)
     runs-on: ubuntu-latest
-    environment: >-
-      ${{
-        github.event.inputs.github_environment
-        || (github.ref == 'refs/heads/main' && 'prod')
-        || (github.ref == 'refs/heads/develop' && 'dev')
-        || 'dev'
-      }}
+    timeout-minutes: 90
+    environment: ${{ github.event.inputs.github_environment }}
     permissions:
       contents: read
       id-token: write
     env:
-      TF_ENV: ${{ github.event.inputs.tf_env || 'dev' }}
+      TF_ENV: ${{ github.event.inputs.tf_env }}
       TF_VAR_database_password: ${{ secrets.TF_VAR_DATABASE_PASSWORD }}
+      TF_PLAN_DIR: ${{ runner.temp }}/tf-plans-${{ github.event.inputs.tf_env }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_CI_SERVICE_ACCOUNT }}
+
       - uses: google-github-actions/setup-gcloud@v2
+
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.10.2
+          terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
-      - name: Plan then apply (saved plan files)
+
+      - name: Ensure GCS state bucket exists
+        shell: bash
         run: |
-          chmod +x scripts/ci-gcp-apply.sh scripts/tf-plan-all.sh scripts/tf.sh scripts/infra-preflight.sh
-          ./scripts/ci-gcp-apply.sh "${TF_ENV}"
+          set -euo pipefail
+          chmod +x scripts/ensure-state-bucket.sh
+          ./scripts/ensure-state-bucket.sh "${TF_ENV}"
+
+      - name: terraform plan then apply (saved plans)
+        run: |
+          set -euo pipefail
+          chmod +x scripts/tf.sh scripts/tf-plan-all.sh scripts/ci-gcp-apply.sh
+          ./scripts/ci-gcp-apply.sh "${{ env.TF_ENV }}"

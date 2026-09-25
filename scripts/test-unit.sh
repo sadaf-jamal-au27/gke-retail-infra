@@ -9,7 +9,13 @@ ENV_TFVARS="${FAST}/datasets/${ENV}/env.tfvars"
 
 echo "=== FAST unit tests (env=${ENV}) ==="
 
-terraform fmt -check -recursive "${FAST}/modules" "${FAST}/stages"
+if ! terraform fmt -check -recursive "${FAST}/modules" "${FAST}/stages"; then
+  echo ""
+  echo "Terraform fmt check failed. Fix locally:"
+  echo "  terraform fmt -recursive ${FAST}/modules ${FAST}/stages"
+  terraform fmt -check -recursive -diff "${FAST}/modules" "${FAST}/stages" || true
+  exit 3
+fi
 
 while IFS= read -r dir; do
   stack="$(basename "${dir}")"

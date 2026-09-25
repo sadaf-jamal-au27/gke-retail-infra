@@ -16,9 +16,7 @@ fi
 
 overall=0
 for stack in "${STACKS[@]}"; do
-  echo "==== FAST ${ENV}/${stack}: init + plan ===="
-  "${SCRIPT_DIR}/tf.sh" "${ENV}" "${stack}" init
-
+  echo "==== FAST ${ENV}/${stack}: plan (init if needed) ===="
   if [[ -n "${PLAN_DIR}" ]]; then
     export TF_PLAN_OUT="${PLAN_DIR}/${stack}.tfplan"
   else
@@ -40,7 +38,8 @@ done
 
 if [[ "${overall}" -eq 2 ]]; then
   echo "Plan complete: changes pending for one or more stacks."
-  exit 2
+  # Exit 0 for CI (terraform plan -detailed-exitcode 2 = diff exists, not failure).
+  exit 0
 fi
 echo "Plan complete: no changes."
 exit 0
