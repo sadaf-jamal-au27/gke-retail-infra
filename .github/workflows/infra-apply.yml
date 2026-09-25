@@ -24,7 +24,7 @@ on:
         options: [dev, qa, test, prod]
 
 concurrency:
-  group: infra-apply-${{ github.event.inputs.branch }}-${{ github.event.inputs.tf_env }}
+  group: infra-apply-${{ github.run_id }}
   cancel-in-progress: false
 
 permissions:
