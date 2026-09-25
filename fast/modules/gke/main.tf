@@ -10,6 +10,7 @@ resource "google_service_account" "workload" {
   display_name = "Retail GKE Workload Identity (${var.env})"
 }
 
+# --- Project-level IAM (APIs that are project-scoped) ---
 resource "google_project_iam_member" "workload_pubsub" {
   project = var.project_id
   role    = "roles/pubsub.publisher"
@@ -28,16 +29,51 @@ resource "google_project_iam_member" "workload_cloudsql" {
   member  = "serviceAccount:${google_service_account.workload.email}"
 }
 
-resource "google_project_iam_member" "workload_secret_accessor" {
-  project = var.project_id
-  role    = "roles/secretmanager.secretAccessor"
-  member  = "serviceAccount:${google_service_account.workload.email}"
+# --- Bucket-level IAM (assets only; not project-wide storageAdmin) ---
+locals {
+  assets_bucket = coalesce(var.assets_bucket_name, "${var.project_id}-retail-assets-${var.env}")
 }
 
-resource "google_project_iam_member" "workload_artifact_registry" {
-  project = var.project_id
-  role    = "roles/artifactregistry.reader"
-  member  = "serviceAccount:${google_service_account.workload.email}"
+data "google_storage_bucket" "assets" {
+  name = local.assets_bucket
+}
+
+resource "google_storage_bucket_iam_member" "workload_assets" {
+  bucket = data.google_storage_bucket.assets.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.workload.email}"
+}
+
+# --- Artifact Registry repo-level (not project-wide reader) ---
+resource "google_artifact_registry_repository_iam_member" "workload_reader" {
+  project    = var.project_id
+  location   = google_artifact_registry_repository.retail.location
+  repository = google_artifact_registry_repository.retail.name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${google_service_account.workload.email}"
+}
+
+# --- Secret Manager secret-level (not project-wide secretAccessor) ---
+resource "google_secret_manager_secret" "app" {
+  for_each  = toset(var.secret_ids)
+  project   = var.project_id
+  secret_id = each.value
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    env = var.env
+  }
+}
+
+resource "google_secret_manager_secret_iam_member" "workload_accessor" {
+  for_each  = toset(var.secret_ids)
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.app[each.key].secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.workload.email}"
 }
 
 resource "google_container_cluster" "primary" {
