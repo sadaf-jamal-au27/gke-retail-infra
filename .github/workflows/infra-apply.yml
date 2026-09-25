@@ -1,7 +1,13 @@
-# Manual only: plan to files, then terraform apply those plans (workflow_dispatch).
+# Apply after merge to develop/main (push), or manual workflow_dispatch.
 name: Infra Terraform Apply
 
 on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "fast/**"
+      - "scripts/**"
+      - ".github/workflows/infra-apply.yml"
   workflow_dispatch:
     inputs:
       branch:
@@ -24,7 +30,7 @@ on:
         options: [dev, qa, test, prod]
 
 concurrency:
-  group: infra-apply-${{ github.run_id }}
+  group: infra-apply-${{ github.repository }}-${{ github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -38,7 +44,7 @@ jobs:
     name: Terraform apply (GCP)
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.github_environment || 'dev' }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.github_environment || (github.ref_name == 'main' && 'prod' || 'dev') }}
     permissions:
       contents: read
       id-token: write
@@ -49,13 +55,19 @@ jobs:
       - name: Resolve TF dataset
         shell: bash
         run: |
-          tf_env="${{ github.event.inputs.tf_env }}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tf_env="${{ github.event.inputs.tf_env }}"
+          elif [[ "${{ github.ref_name }}" == "main" ]]; then
+            tf_env="prod"
+          else
+            tf_env="dev"
+          fi
           echo "TF_ENV=${tf_env}" >> "$GITHUB_ENV"
           echo "TF_PLAN_DIR=${RUNNER_TEMP}/tf-plans-${tf_env}" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
 
       - uses: google-github-actions/auth@v2
         with:
