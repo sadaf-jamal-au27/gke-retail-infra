@@ -47,6 +47,13 @@ if [[ "${ACTION}" == "init" ]]; then
   exit 0
 fi
 
+if [[ "${STACK}" == "cloudsql" ]] && [[ "${ACTION}" != "output" ]]; then
+  if [[ -z "${TF_VAR_database_password:-}" ]]; then
+    echo "ERROR: export TF_VAR_database_password before cloudsql plan/apply"
+    exit 1
+  fi
+fi
+
 VAR_ARGS=(-var-file="${ENV_TFVARS}")
 if [[ -f "${DATASET_STACK_TFVARS}" ]]; then
   VAR_ARGS+=(-var-file="${DATASET_STACK_TFVARS}")
@@ -58,11 +65,7 @@ SERVICE_ACCOUNT_TFVARS="${FAST}/datasets/${ENV}/service_account.tfvars"
 if [[ "${STACK}" == "gke" ]] && [[ -f "${SERVICE_ACCOUNT_TFVARS}" ]]; then
   VAR_ARGS+=(-var-file="${SERVICE_ACCOUNT_TFVARS}")
 fi
-if [[ "${STACK}" == "cloudsql" ]]; then
-  if [[ -z "${TF_VAR_database_password:-}" ]]; then
-    echo "ERROR: export TF_VAR_database_password before cloudsql plan/apply"
-    exit 1
-  fi
+if [[ "${STACK}" == "cloudsql" ]] && [[ "${ACTION}" != "output" ]]; then
   VAR_ARGS+=(-var="database_password=${TF_VAR_database_password}")
 fi
 
@@ -72,6 +75,7 @@ case "${ACTION}" in
     if [[ -n "${TF_PLAN_OUT:-}" ]]; then
       extra+=(-out="${TF_PLAN_OUT}")
     fi
+    # CI plan is read-only; -lock=false avoids stale locks when a run is cancelled mid-plan.
     if [[ "${TF_PLAN_LOCK:-true}" == "false" ]]; then
       extra+=(-lock=false)
     fi
