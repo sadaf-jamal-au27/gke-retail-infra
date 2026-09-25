@@ -95,15 +95,24 @@ const SERVICE_ACCOUNT_DEFAULTS = {
   dev: `# GKE Workload Identity (must match Helm namespace + KSA)
 k8s_namespace       = "retail"
 k8s_service_account = "retail-app"
+
+# Secret Manager secret-level IAM (created + secretAccessor for workload SA)
+secret_ids = [
+  "retail-db-password",
+  "retail-app-config",
+]
 `,
   qa: `k8s_namespace       = "retail-qa"
 k8s_service_account = "retail-app"
+secret_ids          = ["retail-db-password", "retail-app-config"]
 `,
   test: `k8s_namespace       = "retail-test"
 k8s_service_account = "retail-app"
+secret_ids          = ["retail-db-password", "retail-app-config"]
 `,
   prod: `k8s_namespace       = "retail-prod"
 k8s_service_account = "retail-app"
+secret_ids          = ["retail-db-password", "retail-app-config"]
 `,
 };
 
@@ -176,14 +185,16 @@ module "cloud_storage" {
     case "github_wif":
       return `
 module "github_wif" {
-  source       = "${mod}"
-  project_id   = var.project_id
-  region       = var.region
-  env          = var.env
-  github_org   = var.github_org
-  github_repos = var.github_repos
-  pool_id      = var.pool_id
-  provider_id  = var.provider_id
+  source             = "${mod}"
+  project_id         = var.project_id
+  region             = var.region
+  env                = var.env
+  github_org         = var.github_org
+  github_repos       = var.github_repos
+  pool_id            = var.pool_id
+  provider_id        = var.provider_id
+  state_bucket_name  = var.state_bucket
+  assets_bucket_name = "\${var.project_id}-retail-assets-\${var.env}"
 }
 `;
     case "network":
@@ -225,6 +236,8 @@ module "gke" {
   master_authorized_cidr = var.master_authorized_cidr
   k8s_namespace          = var.k8s_namespace
   k8s_service_account    = var.k8s_service_account
+  assets_bucket_name     = var.assets_bucket_name
+  secret_ids             = var.secret_ids
 }
 `;
     case "cloudsql":
@@ -395,6 +408,14 @@ variable "k8s_namespace" {
 variable "k8s_service_account" {
   type    = string
   default = "retail-app"
+}
+variable "assets_bucket_name" {
+  type    = string
+  default = null
+}
+variable "secret_ids" {
+  type    = list(string)
+  default = []
 }
 `;
     case "cloudsql":

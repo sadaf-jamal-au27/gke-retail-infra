@@ -22,3 +22,15 @@ variable "k8s_service_account" {
   type    = string
   default = "retail-app"
 }
+
+variable "assets_bucket_name" {
+  type        = string
+  description = "GCS assets bucket for object-level IAM. Defaults to {project}-retail-assets-{env}."
+  default     = null
+}
+
+variable "secret_ids" {
+  type        = list(string)
+  description = "Secret Manager secret IDs to create (if missing) and grant secretAccessor to the workload SA."
+  default     = []
+}
