@@ -14,6 +14,9 @@ mkdir -p "${TF_PLAN_DIR}"
 echo "=== GCP Terraform deploy (${ENV}): plan then apply ==="
 "${SCRIPT_DIR}/infra-preflight.sh" "${ENV}" || true
 
+echo "=== Adopt existing GCP resources into Terraform state (if any) ==="
+"${SCRIPT_DIR}/tf.sh" "${ENV}" cloud_storage import-existing
+
 set +e
 "${SCRIPT_DIR}/tf-plan-all.sh" "${ENV}"
 ec=$?

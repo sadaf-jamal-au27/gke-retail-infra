@@ -54,6 +54,7 @@ if [[ "${STACK}" == "cloudsql" ]] && [[ "${ACTION}" != "output" ]]; then
   fi
 fi
 
+# Required vars must be set for plan/apply/import (root module has no defaults).
 VAR_ARGS=(-var-file="${ENV_TFVARS}")
 if [[ -f "${DATASET_STACK_TFVARS}" ]]; then
   VAR_ARGS+=(-var-file="${DATASET_STACK_TFVARS}")
@@ -67,6 +68,36 @@ if [[ "${STACK}" == "gke" ]] && [[ -f "${SERVICE_ACCOUNT_TFVARS}" ]]; then
 fi
 if [[ "${STACK}" == "cloudsql" ]] && [[ "${ACTION}" != "output" ]]; then
   VAR_ARGS+=(-var="database_password=${TF_VAR_database_password}")
+fi
+
+# Assets bucket may exist in GCP from a prior partial apply; import into state before plan/apply.
+adopt_cloud_storage_assets() {
+  local project_id bucket addr
+  project_id="$(grep '^project_id' "${ENV_TFVARS}" | head -1 | cut -d'"' -f2)"
+  bucket="${project_id}-retail-assets-${ENV}"
+  addr="module.cloud_storage.google_storage_bucket.assets"
+  if terraform state show -no-color "${addr}" >/dev/null 2>&1; then
+    return 0
+  fi
+  if command -v gcloud >/dev/null 2>&1; then
+    if ! gcloud storage buckets describe "gs://${bucket}" --project="${project_id}" >/dev/null 2>&1; then
+      return 0
+    fi
+  else
+    return 0
+  fi
+  echo "terraform import ${addr} ${bucket}"
+  terraform import -input=false "${VAR_ARGS[@]}" "${addr}" "${bucket}"
+}
+
+if [[ "${STACK}" == "cloud_storage" ]]; then
+  if [[ "${ACTION}" == "import-existing" ]]; then
+    adopt_cloud_storage_assets
+    exit 0
+  fi
+  if [[ "${ACTION}" == "plan" || "${ACTION}" == "apply" ]]; then
+    adopt_cloud_storage_assets
+  fi
 fi
 
 case "${ACTION}" in
