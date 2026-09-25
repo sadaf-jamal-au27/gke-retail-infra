@@ -1,17 +1,14 @@
-# Branching: merge to develop → apply (dev) | merge to main → apply (prod)
+# Manual apply only — run after PR is merged (develop = dev, main = prod).
 name: infra-apply
 
 on:
-  push:
-    branches: [develop, main]
-    paths:
-      - "fast/**"
-      - "scripts/**"
-      - "tests/**"
-      - ".github/workflows/infra-plan.yml"
-      - ".github/workflows/infra-apply.yml"
   workflow_dispatch:
     inputs:
+      branch:
+        description: Branch to deploy (must match merged PR target)
+        required: true
+        type: choice
+        options: [develop, main]
       github_environment:
         description: GitHub Environment (secrets)
         required: true
@@ -24,7 +21,7 @@ on:
         options: [dev, qa, test, prod]
 
 concurrency:
-  group: infra-apply-${{ github.ref_name }}-${{ github.event.inputs.tf_env || 'dev' }}
+  group: infra-apply-${{ github.event.inputs.branch }}-${{ github.event.inputs.tf_env }}
   cancel-in-progress: false
 
 permissions:
@@ -34,21 +31,17 @@ jobs:
   terraform-apply:
     name: Terraform apply (GCP)
     runs-on: ubuntu-latest
-    environment: >-
-      ${{
-        github.event.inputs.github_environment
-        || (github.ref == 'refs/heads/main' && 'prod')
-        || (github.ref == 'refs/heads/develop' && 'dev')
-        || 'dev'
-      }}
+    environment: ${{ github.event.inputs.github_environment }}
     permissions:
       contents: read
       id-token: write
     env:
-      TF_ENV: ${{ github.event.inputs.tf_env || 'dev' }}
+      TF_ENV: ${{ github.event.inputs.tf_env }}
       TF_VAR_database_password: ${{ secrets.TF_VAR_DATABASE_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}

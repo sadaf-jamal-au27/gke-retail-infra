@@ -1,17 +1,9 @@
-# Branching: feature/* → PR develop (plan dev) | develop → PR main (plan prod)
+# Plan only via Pull Request (feature/* → develop, develop → main).
 name: infra-plan
 
 on:
   pull_request:
     branches: [develop, main]
-    paths:
-      - "fast/**"
-      - "scripts/**"
-      - "tests/**"
-      - ".github/workflows/infra-plan.yml"
-      - ".github/workflows/infra-apply.yml"
-  push:
-    branches: ["feature/**"]
     paths:
       - "fast/**"
       - "scripts/**"
@@ -32,7 +24,7 @@ on:
         options: [dev, qa, test, prod]
 
 concurrency:
-  group: infra-plan-${{ github.event.pull_request.number || github.ref_name }}-${{ github.event.inputs.tf_env || 'dev' }}
+  group: infra-plan-pr-${{ github.event.pull_request.number || 'manual' }}-${{ github.event.inputs.tf_env || 'dev' }}
   cancel-in-progress: true
 
 permissions:
@@ -56,6 +48,7 @@ jobs:
     name: Terraform plan (GCP)
     runs-on: ubuntu-latest
     needs: static
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     environment: ${{ github.event.inputs.github_environment || (github.base_ref == 'main' && 'prod' || 'dev') }}
     permissions:
       contents: read
