@@ -26,10 +26,11 @@ variable "ci_service_account_id" {
 
 variable "terraform_roles" {
   type = list(string)
+  # Do NOT include roles the CI SA cannot grant to itself (needs Owner / projectIamAdmin).
+  # Grant once as a human: roles/iam.workloadIdentityPoolAdmin, roles/secretmanager.admin
   default = [
     "roles/editor",
     "roles/iam.serviceAccountAdmin",
-    "roles/iam.workloadIdentityPoolAdmin",
     "roles/storage.admin",
   ]
 }
@@ -48,6 +49,6 @@ variable "assets_bucket_name" {
 
 variable "enable_secret_manager_admin" {
   type        = bool
-  description = "Grant roles/secretmanager.admin on the project to the CI SA."
-  default     = true
+  description = "Grant roles/secretmanager.admin to CI SA. Default false — CI cannot self-grant this (403); use Owner once if needed."
+  default     = false
 }
