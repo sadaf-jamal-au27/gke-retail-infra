@@ -16,13 +16,6 @@ fi
 
 overall=0
 for stack in "${STACKS[@]}"; do
-  skip_reason="$("${SCRIPT_DIR}/stack-plan-skip-reason.sh" "${ENV}" "${stack}" 2>/dev/null || true)"
-  if [[ -n "${skip_reason}" ]]; then
-    echo "==== SKIP ${ENV}/${stack}: ${skip_reason} ===="
-    unset TF_PLAN_OUT
-    continue
-  fi
-
   echo "==== FAST ${ENV}/${stack}: plan (init if needed) ===="
   if [[ -n "${PLAN_DIR}" ]]; then
     export TF_PLAN_OUT="${PLAN_DIR}/${stack}.tfplan"

@@ -146,7 +146,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x scripts/tf.sh scripts/tf-plan-all.sh scripts/stack-plan-skip-reason.sh
+          chmod +x scripts/tf.sh scripts/tf-plan-all.sh
           mkdir -p "${TF_PLAN_DIR}"
           ./scripts/tf-plan-all.sh "${TF_ENV}"
 
