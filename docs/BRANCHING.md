@@ -1,5 +1,7 @@
 # Branching: feature → develop → main
 
+**Poori design + architecture + setup:** [`docs/PLATFORM_GUIDE.md`](PLATFORM_GUIDE.md)
+
 Org: **`sadaf-jamal-au27`**. Same flow on every repo.
 
 ## Branches
@@ -18,15 +20,20 @@ feature/add-vpc ──PR──► develop ──PR──► main
          └─ PR → plan (env dev)
 ```
 
-## Infra CI (`gke-retail-infra`)
+## Infra CI — two workflows
 
-| Event | GitHub Environment | Terraform `TF_ENV` | Action |
-|-------|-------------------|-------------------|--------|
-| PR → **`develop`** | `dev` | `dev` | plan |
-| PR → **`main`** (from develop) | `prod` | `dev`* | plan |
-| Push **`develop`** | `dev` | `dev` | apply |
-| Push **`main`** | `prod` | `dev`* | apply |
-| Run workflow | you choose | you choose | plan / apply |
+| Workflow | File | When it runs |
+|----------|------|----------------|
+| **Plan** | `.github/workflows/infra-plan.yml` | PR → `develop` / `main`; push to **`feature/**`**; manual |
+| **Apply** | `.github/workflows/infra-apply.yml` | Push to **`develop`** / **`main`** only (after merge); manual |
+
+| Event | Workflow | GitHub Environment | Terraform |
+|-------|----------|-------------------|-----------|
+| PR → **`develop`** | infra-plan | `dev` | plan |
+| PR → **`main`** | infra-plan | `prod` | plan |
+| Push **`feature/*`** | infra-plan | `dev` | plan (early feedback) |
+| Push **`develop`** | infra-apply | `dev` | apply |
+| Push **`main`** | infra-apply | `prod` | apply |
 
 \*Until a real prod GCP project exists, **`prod` GitHub secrets mirror `dev`** and `TF_ENV` stays **`dev`**. When prod project is ready, set `fast/datasets/prod/env.tfvars` and use `tf_env: prod` on dispatch.
 
@@ -38,13 +45,14 @@ feature/add-vpc ──PR──► develop ──PR──► main
 
 | Branch | Rule |
 |--------|------|
-| **`develop`** | Require PR; checks: `terraform unit (fast)`, `terraform integration (fast)` |
-| **`main`** | Require PR; **only merge from `develop`** (no direct feature commits); same checks + optional reviewer on **`prod`** environment |
+| **`develop`** | Require PR; checks: `Terraform static checks`, `Terraform plan (GCP)` |
+| **`main`** | Same checks + optional reviewer on **`prod`** environment |
 
-Setup:
+Setup remote **`develop`** (once):
 
 ```bash
 cd ~/Projects/gke-retail-infra
+./scripts/git-sync-develop.sh
 ./scripts/github-setup-branch-protection.sh
 ```
 

@@ -1,0 +1,64 @@
+# Branching: merge to develop → apply (dev) | merge to main → apply (prod)
+name: infra-apply
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "fast/**"
+      - "scripts/**"
+      - "tests/**"
+      - ".github/workflows/infra-plan.yml"
+      - ".github/workflows/infra-apply.yml"
+  workflow_dispatch:
+    inputs:
+      github_environment:
+        description: GitHub Environment (secrets)
+        required: true
+        type: choice
+        options: [dev, prod]
+      tf_env:
+        description: Terraform dataset (GCP)
+        required: true
+        type: choice
+        options: [dev, qa, test, prod]
+
+concurrency:
+  group: infra-apply-${{ github.ref_name }}-${{ github.event.inputs.tf_env || 'dev' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-apply:
+    name: Terraform apply (GCP)
+    runs-on: ubuntu-latest
+    environment: >-
+      ${{
+        github.event.inputs.github_environment
+        || (github.ref == 'refs/heads/main' && 'prod')
+        || (github.ref == 'refs/heads/develop' && 'dev')
+        || 'dev'
+      }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_ENV: ${{ github.event.inputs.tf_env || 'dev' }}
+      TF_VAR_database_password: ${{ secrets.TF_VAR_DATABASE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_CI_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.2
+          terraform_wrapper: false
+      - name: Plan then apply (saved plan files)
+        run: |
+          chmod +x scripts/ci-gcp-apply.sh scripts/tf-plan-all.sh scripts/tf.sh scripts/infra-preflight.sh
+          ./scripts/ci-gcp-apply.sh "${TF_ENV}"
