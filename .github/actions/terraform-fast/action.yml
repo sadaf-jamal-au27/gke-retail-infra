@@ -1,0 +1,199 @@
+# CI runs the Terraform CLI directly (local dev may still use scripts/tf.sh).
+name: terraform-fast
+description: FAST stacks — terraform fmt, validate, test, init, plan, apply
+inputs:
+  fast_root:
+    description: Repository-relative path to fast/ (e.g. infra/fast or fast)
+    required: true
+  tf_env:
+    description: Dataset (dev, qa, test, prod)
+    required: true
+  command:
+    description: static | plan | apply
+    required: true
+  plan_directory:
+    description: Directory for .tfplan files (required for plan and apply)
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: terraform fmt -check
+      if: inputs.command == 'static'
+      shell: bash
+      run: |
+        set -euo pipefail
+        FAST="${{ github.workspace }}/${{ inputs.fast_root }}"
+        terraform fmt -check -recursive "${FAST}/modules" "${FAST}/stages"
+
+    - name: terraform validate (FAST stacks)
+      if: inputs.command == 'static'
+      shell: bash
+      run: |
+        set -euo pipefail
+        FAST="${{ github.workspace }}/${{ inputs.fast_root }}"
+
+        stack_stage() {
+          case "$1" in
+            project_services|cloud_storage|github_wif) echo "0-bootstrap" ;;
+            network) echo "1-network" ;;
+            gke|cloudsql|pubsub|cloudrun) echo "2-platform" ;;
+            *) echo "unknown"; return 1 ;;
+          esac
+        }
+
+        for stack in project_services cloud_storage github_wif network gke cloudsql pubsub cloudrun; do
+          stage="$(stack_stage "${stack}")"
+          echo "::group::terraform validate — ${stack}"
+          cd "${FAST}/stages/${stage}/${stack}"
+          terraform init -backend=false -input=false >/dev/null
+          terraform validate
+          echo "::endgroup::"
+        done
+
+    - name: terraform test (unit)
+      if: inputs.command == 'static'
+      shell: bash
+      run: |
+        set -euo pipefail
+        UNIT="${{ github.workspace }}/$(dirname "${{ inputs.fast_root }}")/tests/unit"
+        if [[ ! -d "${UNIT}" ]]; then
+          echo "No unit tests at ${UNIT}; skipping."
+          exit 0
+        fi
+        cd "${UNIT}"
+        terraform init -backend=false -input=false >/dev/null
+        terraform test
+
+    - name: terraform test (integration)
+      if: inputs.command == 'static'
+      shell: bash
+      run: |
+        set -euo pipefail
+        PLATFORM="${{ github.workspace }}/$(dirname "${{ inputs.fast_root }}")/tests/integration/platform"
+        if [[ ! -d "${PLATFORM}" ]]; then
+          echo "No integration tests at ${PLATFORM}; skipping."
+          exit 0
+        fi
+        cd "${PLATFORM}"
+        terraform init -backend=false -input=false >/dev/null
+        terraform test
+
+    - name: terraform init & plan (FAST stacks)
+      if: inputs.command == 'plan' || inputs.command == 'apply'
+      shell: bash
+      env:
+        TF_VAR_database_password: ${{ env.TF_VAR_database_password }}
+      run: |
+        set -euo pipefail
+        FAST="${{ github.workspace }}/${{ inputs.fast_root }}"
+        ENV="${{ inputs.tf_env }}"
+        PLAN_DIR="${{ inputs.plan_directory }}"
+        ENV_TFVARS="${FAST}/datasets/${ENV}/env.tfvars"
+        SA_TFVARS="${FAST}/datasets/${ENV}/service_account.tfvars"
+
+        if [[ -z "${PLAN_DIR}" ]]; then
+          echo "plan_directory is required for plan/apply"
+          exit 1
+        fi
+        mkdir -p "${PLAN_DIR}"
+
+        stack_stage() {
+          case "$1" in
+            project_services|cloud_storage|github_wif) echo "0-bootstrap" ;;
+            network) echo "1-network" ;;
+            gke|cloudsql|pubsub|cloudrun) echo "2-platform" ;;
+            *) return 1 ;;
+          esac
+        }
+
+        stacks=(project_services cloud_storage github_wif network gke cloudsql pubsub)
+        overall=0
+
+        for stack in "${stacks[@]}"; do
+          stage="$(stack_stage "${stack}")"
+          dir="${FAST}/stages/${stage}/${stack}"
+          backend="${FAST}/backends/${ENV}/${stack}.hcl"
+
+          echo "::group::${stack} — terraform init"
+          cd "${dir}"
+          terraform init -reconfigure -input=false -backend-config="${backend}"
+          echo "::endgroup::"
+
+          var_args=(-var-file="${ENV_TFVARS}")
+          dataset="${FAST}/datasets/${ENV}/${stack}.tfvars"
+          if [[ -f "${dataset}" ]]; then
+            var_args+=(-var-file="${dataset}")
+          fi
+          if [[ "${stack}" == "gke" && -f "${SA_TFVARS}" ]]; then
+            var_args+=(-var-file="${SA_TFVARS}")
+          fi
+          if [[ "${stack}" == "cloudsql" ]]; then
+            if [[ -z "${TF_VAR_database_password:-}" ]]; then
+              echo "TF_VAR_database_password is required for cloudsql plan"
+              exit 1
+            fi
+            var_args+=(-var="database_password=${TF_VAR_database_password}")
+          fi
+
+          echo "::group::${stack} — terraform plan"
+          set +e
+          terraform plan "${var_args[@]}" -input=false -detailed-exitcode -out="${PLAN_DIR}/${stack}.tfplan"
+          ec=$?
+          set -e
+          echo "::endgroup::"
+
+          if [[ "${ec}" -eq 1 ]]; then
+            exit 1
+          fi
+          if [[ "${ec}" -eq 2 ]]; then
+            overall=2
+            echo "Changes planned for ${stack}"
+          fi
+          if [[ "${ec}" -eq 0 ]]; then
+            rm -f "${PLAN_DIR}/${stack}.tfplan"
+          fi
+        done
+
+        if [[ "${overall}" -eq 2 ]]; then
+          echo "One or more stacks have pending changes."
+        else
+          echo "No infrastructure changes in plan."
+        fi
+
+    - name: terraform apply (saved plans)
+      if: inputs.command == 'apply'
+      shell: bash
+      run: |
+        set -euo pipefail
+        FAST="${{ github.workspace }}/${{ inputs.fast_root }}"
+        ENV="${{ inputs.tf_env }}"
+        PLAN_DIR="${{ inputs.plan_directory }}"
+
+        stack_stage() {
+          case "$1" in
+            project_services|cloud_storage|github_wif) echo "0-bootstrap" ;;
+            network) echo "1-network" ;;
+            gke|cloudsql|pubsub|cloudrun) echo "2-platform" ;;
+            *) return 1 ;;
+          esac
+        }
+
+        stacks=(project_services cloud_storage github_wif network gke cloudsql pubsub)
+
+        for stack in "${stacks[@]}"; do
+          plan_file="${PLAN_DIR}/${stack}.tfplan"
+          if [[ ! -f "${plan_file}" ]]; then
+            echo "${stack}: no plan file (no changes) — skip apply"
+            continue
+          fi
+          stage="$(stack_stage "${stack}")"
+          dir="${FAST}/stages/${stage}/${stack}"
+          backend="${FAST}/backends/${ENV}/${stack}.hcl"
+
+          echo "::group::${stack} — terraform apply"
+          cd "${dir}"
+          terraform init -reconfigure -input=false -backend-config="${backend}"
+          terraform apply -input=false "${plan_file}"
+          echo "::endgroup::"
+        done

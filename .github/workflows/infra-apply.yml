@@ -1,5 +1,5 @@
-# Manual apply only — run after PR is merged (develop = dev, main = prod).
-name: infra-apply
+# Manual apply only (Actions → Infra · Terraform apply). Use GitHub Environment reviewers on dev/prod.
+name: Infra · Terraform apply
 
 on:
   workflow_dispatch:
@@ -8,16 +8,19 @@ on:
         description: Branch to deploy (must match merged PR target)
         required: true
         type: choice
+        default: develop
         options: [develop, main]
       github_environment:
         description: GitHub Environment (secrets)
         required: true
         type: choice
+        default: dev
         options: [dev, prod]
       tf_env:
         description: Terraform dataset (GCP)
         required: true
         type: choice
+        default: dev
         options: [dev, qa, test, prod]
 
 concurrency:
@@ -27,10 +30,15 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  TF_VERSION: "1.10.2"
+  FAST_ROOT: fast
+
 jobs:
   terraform-apply:
     name: Terraform apply (GCP)
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     environment: ${{ github.event.inputs.github_environment }}
     permissions:
       contents: read
@@ -38,6 +46,7 @@ jobs:
     env:
       TF_ENV: ${{ github.event.inputs.tf_env }}
       TF_VAR_database_password: ${{ secrets.TF_VAR_DATABASE_PASSWORD }}
+      TF_PLAN_DIR: ${{ runner.temp }}/tf-plans-${{ github.event.inputs.tf_env }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,9 +58,19 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.10.2
+          terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
-      - name: Plan then apply (saved plan files)
-        run: |
-          chmod +x scripts/ci-gcp-apply.sh scripts/tf-plan-all.sh scripts/tf.sh scripts/infra-preflight.sh
-          ./scripts/ci-gcp-apply.sh "${TF_ENV}"
+      - name: terraform plan (saved plans)
+        uses: ./.github/actions/terraform-fast
+        with:
+          fast_root: ${{ env.FAST_ROOT }}
+          tf_env: ${{ env.TF_ENV }}
+          command: plan
+          plan_directory: ${{ env.TF_PLAN_DIR }}
+      - name: terraform apply (saved plans)
+        uses: ./.github/actions/terraform-fast
+        with:
+          fast_root: ${{ env.FAST_ROOT }}
+          tf_env: ${{ env.TF_ENV }}
+          command: apply
+          plan_directory: ${{ env.TF_PLAN_DIR }}

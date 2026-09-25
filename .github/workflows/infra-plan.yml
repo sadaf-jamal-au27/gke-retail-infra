@@ -1,61 +1,73 @@
-# Plan only via Pull Request (feature/* → develop, develop → main).
-name: infra-plan
+# PR-only Terraform plan (feature/* → develop, develop → main). Manual plan via workflow_dispatch.
+name: Infra · Terraform plan
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [develop, main]
     paths:
       - "fast/**"
       - "scripts/**"
       - "tests/**"
-      - ".github/workflows/infra-plan.yml"
-      - ".github/workflows/infra-apply.yml"
+      - ".github/**"
   workflow_dispatch:
     inputs:
       github_environment:
         description: GitHub Environment (secrets)
         required: true
         type: choice
+        default: dev
         options: [dev, prod]
       tf_env:
         description: Terraform dataset (GCP)
         required: true
         type: choice
+        default: dev
         options: [dev, qa, test, prod]
 
 concurrency:
-  group: infra-plan-pr-${{ github.event.pull_request.number || 'manual' }}-${{ github.event.inputs.tf_env || 'dev' }}
+  group: infra-plan-${{ github.event.pull_request.number || format('manual-{0}', github.run_id) }}-${{ github.event.inputs.tf_env || (github.base_ref == 'main' && 'prod' || 'dev') }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
+env:
+  TF_VERSION: "1.10.2"
+  TF_ENV: ${{ github.event.inputs.tf_env || (github.base_ref == 'main' && 'prod' || 'dev') }}
+  FAST_ROOT: fast
+
 jobs:
   static:
     name: Terraform static checks
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.10.2
+          terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
-      - run: |
-          chmod +x scripts/test-static.sh
-          ./scripts/test-static.sh dev
+      - name: terraform fmt, validate, test
+        uses: ./.github/actions/terraform-fast
+        with:
+          fast_root: ${{ env.FAST_ROOT }}
+          tf_env: ${{ env.TF_ENV }}
+          command: static
 
   terraform-plan:
     name: Terraform plan (GCP)
     runs-on: ubuntu-latest
     needs: static
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 60
     environment: ${{ github.event.inputs.github_environment || (github.base_ref == 'main' && 'prod' || 'dev') }}
     permissions:
       contents: read
       id-token: write
     env:
-      TF_ENV: ${{ github.event.inputs.tf_env || 'dev' }}
       TF_VAR_database_password: ${{ secrets.TF_VAR_DATABASE_PASSWORD }}
+      TF_PLAN_DIR: ${{ runner.temp }}/tf-plans-${{ env.TF_ENV }}
     steps:
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
@@ -65,17 +77,20 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.10.2
+          terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
-      - name: Init remote state + plan all stacks
-        run: |
-          chmod +x scripts/ci-gcp-plan.sh scripts/tf-plan-all.sh scripts/tf.sh scripts/infra-preflight.sh
-          ./scripts/ci-gcp-plan.sh "${TF_ENV}"
-      - name: Upload plan artifacts
+      - name: terraform init & plan (remote state)
+        uses: ./.github/actions/terraform-fast
+        with:
+          fast_root: ${{ env.FAST_ROOT }}
+          tf_env: ${{ env.TF_ENV }}
+          command: plan
+          plan_directory: ${{ env.TF_PLAN_DIR }}
+      - name: Upload terraform plan artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plans-${{ env.TF_ENV }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/tf-plans-${{ env.TF_ENV }}/
+          path: ${{ env.TF_PLAN_DIR }}/
           if-no-files-found: ignore
           retention-days: 14
