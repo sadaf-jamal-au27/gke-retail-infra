@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Local / ad-hoc only. GitHub Actions uses .github/actions/terraform-fast (plan + apply).
 # CI deploy: plan to files, then apply those exact plans (same job — no blind apply).
 set -euo pipefail
 
@@ -24,13 +25,19 @@ fi
 for stack in "${STACKS[@]}"; do
   plan_file="${TF_PLAN_DIR}/${stack}.tfplan"
   echo "==== FAST ${ENV}/${stack}: apply plan ===="
-  "${SCRIPT_DIR}/tf.sh" "${ENV}" "${stack}" init
-  if [[ -f "${plan_file}" ]]; then
-    export TF_PLAN_IN="${plan_file}"
-    "${SCRIPT_DIR}/tf.sh" "${ENV}" "${stack}" apply
-    unset TF_PLAN_IN
-  else
+  if [[ ! -f "${plan_file}" ]]; then
     echo "No plan file for ${stack} (no changes) — skipping apply."
+    continue
+  fi
+  export TF_PLAN_IN="${plan_file}"
+  set +e
+  "${SCRIPT_DIR}/tf.sh" "${ENV}" "${stack}" apply
+  ec=$?
+  set -e
+  unset TF_PLAN_IN
+  if [[ "${ec}" -ne 0 ]]; then
+    echo "Apply failed for ${stack} (exit ${ec})"
+    exit 1
   fi
 done
 

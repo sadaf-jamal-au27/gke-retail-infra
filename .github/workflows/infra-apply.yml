@@ -38,15 +38,21 @@ jobs:
     name: Terraform apply (GCP)
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    environment: ${{ github.event.inputs.github_environment }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.github_environment || 'dev' }}
     permissions:
       contents: read
       id-token: write
     env:
-      TF_ENV: ${{ github.event.inputs.tf_env }}
       TF_VAR_database_password: ${{ secrets.TF_VAR_DATABASE_PASSWORD }}
-      TF_PLAN_DIR: ${{ runner.temp }}/tf-plans-${{ github.event.inputs.tf_env }}
+      TF_PLAN_LOCK: "false"
     steps:
+      - name: Resolve TF dataset
+        shell: bash
+        run: |
+          tf_env="${{ github.event.inputs.tf_env }}"
+          echo "TF_ENV=${tf_env}" >> "$GITHUB_ENV"
+          echo "TF_PLAN_DIR=${RUNNER_TEMP}/tf-plans-${tf_env}" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch }}
@@ -71,7 +77,8 @@ jobs:
           ./scripts/ensure-state-bucket.sh "${TF_ENV}"
 
       - name: terraform plan then apply (saved plans)
+        shell: bash
         run: |
           set -euo pipefail
           chmod +x scripts/tf.sh scripts/tf-plan-all.sh scripts/ci-gcp-apply.sh
-          ./scripts/ci-gcp-apply.sh "${{ env.TF_ENV }}"
+          ./scripts/ci-gcp-apply.sh "${TF_ENV}"
