@@ -39,12 +39,15 @@ resource "google_service_account_iam_member" "wif_binding" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${each.value}"
 }
 
+# --- Project-level IAM (Terraform apply needs broad project APIs) ---
 resource "google_project_iam_member" "ci_roles" {
   for_each = toset(var.terraform_roles)
   project  = var.project_id
   role     = each.value
   member   = "serviceAccount:${google_service_account.ci.email}"
 }
+
+# --- Bucket-level IAM (state + assets; least privilege overlay on storage.admin) ---
 
 data "google_storage_bucket" "terraform_state" {
   name = local.state_bucket
@@ -65,3 +68,13 @@ resource "google_storage_bucket_iam_member" "ci_assets" {
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.ci.email}"
 }
+
+
+# --- Secret Manager project-level for CI (create/manage app secrets via Terraform) ---
+resource "google_project_iam_member" "ci_secret_admin" {
+  count   = var.enable_secret_manager_admin ? 1 : 0
+  project = var.project_id
+  role    = "roles/secretmanager.admin"
+  member  = "serviceAccount:${google_service_account.ci.email}"
+}
+

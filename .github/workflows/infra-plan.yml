@@ -1,17 +1,9 @@
-# Branching: feature/* → PR develop (plan dev) | develop → PR main (plan prod)
-name: infra-plan
+# PR -> develop/main: static Terraform checks + remote plan. Manual: workflow_dispatch.
+name: Infra Terraform Plan
 
 on:
   pull_request:
     branches: [develop, main]
-    paths:
-      - "fast/**"
-      - "scripts/**"
-      - "tests/**"
-      - ".github/workflows/infra-plan.yml"
-      - ".github/workflows/infra-apply.yml"
-  push:
-    branches: ["feature/**"]
     paths:
       - "fast/**"
       - "scripts/**"
@@ -24,65 +16,145 @@ on:
         description: GitHub Environment (secrets)
         required: true
         type: choice
+        default: dev
         options: [dev, prod]
       tf_env:
         description: Terraform dataset (GCP)
         required: true
         type: choice
+        default: dev
         options: [dev, qa, test, prod]
 
 concurrency:
-  group: infra-plan-${{ github.event.pull_request.number || github.ref_name }}-${{ github.event.inputs.tf_env || 'dev' }}
+  group: infra-plan-${{ github.repository }}-${{ github.base_ref == 'main' && 'prod' || 'dev' }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
+env:
+  TF_VERSION: "1.10.2"
+
 jobs:
   static:
     name: Terraform static checks
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve TF dataset
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "TF_ENV=${{ github.event.inputs.tf_env }}" >> "$GITHUB_ENV"
+          elif [[ "${{ github.base_ref }}" == "main" ]]; then
+            echo "TF_ENV=prod" >> "$GITHUB_ENV"
+          else
+            echo "TF_ENV=dev" >> "$GITHUB_ENV"
+          fi
+
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.10.2
+          terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
-      - run: |
-          chmod +x scripts/test-static.sh
-          ./scripts/test-static.sh dev
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive fast/modules fast/stages
+
+      - name: terraform validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          stack_dir() {
+            case "$1" in
+              project_services|cloud_storage|github_wif) echo "fast/stages/0-bootstrap/$1" ;;
+              network) echo "fast/stages/1-network/network" ;;
+              gke|cloudsql|pubsub|cloudrun) echo "fast/stages/2-platform/$1" ;;
+            esac
+          }
+          for stack in project_services cloud_storage github_wif network gke cloudsql pubsub cloudrun; do
+            dir="$(stack_dir "${stack}")"
+            echo "::group::terraform validate - ${stack}"
+            pushd "${dir}" >/dev/null
+            terraform init -backend=false -input=false >/dev/null
+            terraform validate
+            popd >/dev/null
+            echo "::endgroup::"
+          done
+
+      - name: terraform test (unit)
+        run: |
+          cd tests/unit
+          terraform init -backend=false -input=false >/dev/null
+          terraform test
+
+      - name: terraform test (integration)
+        run: |
+          cd tests/integration/platform
+          terraform init -backend=false -input=false >/dev/null
+          terraform test
 
   terraform-plan:
     name: Terraform plan (GCP)
     runs-on: ubuntu-latest
     needs: static
-    environment: ${{ github.event.inputs.github_environment || (github.base_ref == 'main' && 'prod' || 'dev') }}
+    timeout-minutes: 60
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.github_environment || (github.base_ref == 'main' && 'prod' || 'dev') }}
     permissions:
       contents: read
       id-token: write
     env:
-      TF_ENV: ${{ github.event.inputs.tf_env || 'dev' }}
       TF_VAR_database_password: ${{ secrets.TF_VAR_DATABASE_PASSWORD }}
+      TF_PLAN_LOCK: "false"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve TF dataset
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tf_env="${{ github.event.inputs.tf_env }}"
+          elif [[ "${{ github.base_ref }}" == "main" ]]; then
+            tf_env="prod"
+          else
+            tf_env="dev"
+          fi
+          echo "TF_ENV=${tf_env}" >> "$GITHUB_ENV"
+          echo "TF_PLAN_DIR=${RUNNER_TEMP}/tf-plans-${tf_env}" >> "$GITHUB_ENV"
+
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_CI_SERVICE_ACCOUNT }}
+
       - uses: google-github-actions/setup-gcloud@v2
+
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.10.2
+          terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
-      - name: Init remote state + plan all stacks
+
+      - name: Ensure GCS state bucket exists
+        shell: bash
         run: |
-          chmod +x scripts/ci-gcp-plan.sh scripts/tf-plan-all.sh scripts/tf.sh scripts/infra-preflight.sh
-          ./scripts/ci-gcp-plan.sh "${TF_ENV}"
+          set -euo pipefail
+          chmod +x scripts/ensure-state-bucket.sh
+          ./scripts/ensure-state-bucket.sh "${TF_ENV}"
+
+      - name: terraform plan (FAST stacks)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/tf.sh scripts/tf-plan-all.sh
+          mkdir -p "${TF_PLAN_DIR}"
+          ./scripts/tf-plan-all.sh "${TF_ENV}"
+
       - name: Upload plan artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plans-${{ env.TF_ENV }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/tf-plans-${{ env.TF_ENV }}/
+          path: ${{ env.TF_PLAN_DIR }}/
           if-no-files-found: ignore
           retention-days: 14
