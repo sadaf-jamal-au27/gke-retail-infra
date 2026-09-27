@@ -26,6 +26,7 @@ variable "ci_service_account_id" {
 
 variable "terraform_roles" {
   type = list(string)
+  # Do NOT include roles the CI SA cannot grant to itself (needs Owner / projectIamAdmin).
   default = [
     "roles/editor",
     "roles/iam.serviceAccountAdmin",
@@ -43,4 +44,10 @@ variable "assets_bucket_name" {
   type        = string
   description = "Assets bucket. Defaults to {project}-retail-assets-{env}."
   default     = null
+}
+
+variable "enable_secret_manager_admin" {
+  type        = bool
+  description = "Grant roles/secretmanager.admin to CI SA. Default false."
+  default     = false
 }
