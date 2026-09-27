@@ -1,6 +1,8 @@
 locals {
   github_repositories = [for name in var.github_repos : "${var.github_org}/${name}"]
   attribute_condition = join(" || ", [for repo in local.github_repositories : "assertion.repository == \"${repo}\""])
+  assets_bucket       = coalesce(var.assets_bucket_name, "${var.project_id}-retail-assets-${var.env}")
+  state_bucket        = coalesce(var.state_bucket_name, "${var.project_id}-retail-tfstate-${var.env}")
 }
 
 resource "google_iam_workload_identity_pool" "github" {
@@ -42,4 +44,24 @@ resource "google_project_iam_member" "ci_roles" {
   project  = var.project_id
   role     = each.value
   member   = "serviceAccount:${google_service_account.ci.email}"
+}
+
+data "google_storage_bucket" "terraform_state" {
+  name = local.state_bucket
+}
+
+data "google_storage_bucket" "assets" {
+  name = local.assets_bucket
+}
+
+resource "google_storage_bucket_iam_member" "ci_state" {
+  bucket = data.google_storage_bucket.terraform_state.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.ci.email}"
+}
+
+resource "google_storage_bucket_iam_member" "ci_assets" {
+  bucket = data.google_storage_bucket.assets.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.ci.email}"
 }

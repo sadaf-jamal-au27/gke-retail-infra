@@ -32,3 +32,15 @@ variable "terraform_roles" {
     "roles/storage.admin",
   ]
 }
+
+variable "state_bucket_name" {
+  type        = string
+  description = "Terraform state bucket. Defaults to {project}-retail-tfstate-{env}."
+  default     = null
+}
+
+variable "assets_bucket_name" {
+  type        = string
+  description = "Assets bucket. Defaults to {project}-retail-assets-{env}."
+  default     = null
+}

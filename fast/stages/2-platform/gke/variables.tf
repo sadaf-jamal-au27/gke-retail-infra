@@ -35,3 +35,9 @@ variable "use_custom_node_sa" {
   type    = bool
   default = false
 }
+
+variable "secret_ids" {
+  type        = list(string)
+  description = "Secret Manager IDs to keep (must match live state)."
+  default     = []
+}

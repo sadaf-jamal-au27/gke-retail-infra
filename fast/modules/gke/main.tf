@@ -85,6 +85,21 @@ resource "google_container_cluster" "primary" {
   }
 }
 
+# Secrets already in state (from develop). Do not drop — plan would destroy them.
+resource "google_secret_manager_secret" "app" {
+  for_each  = toset(var.secret_ids)
+  project   = var.project_id
+  secret_id = each.value
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    env = var.env
+  }
+}
+
 resource "google_storage_bucket_iam_member" "workload_assets" {
   bucket = "${var.project_id}-retail-assets-${var.env}"
   role   = "roles/storage.objectAdmin"

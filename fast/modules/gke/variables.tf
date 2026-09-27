@@ -28,3 +28,9 @@ variable "use_custom_node_sa" {
   description = "Attach gke-node-<env> to Autopilot. Existing clusters may force REPLACE — plan first."
   default     = false
 }
+
+variable "secret_ids" {
+  type        = list(string)
+  description = "Secret Manager IDs already created for the workload SA."
+  default     = []
+}

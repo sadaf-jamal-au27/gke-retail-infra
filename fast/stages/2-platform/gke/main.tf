@@ -28,4 +28,5 @@ module "gke" {
   k8s_namespace          = var.k8s_namespace
   k8s_service_account    = var.k8s_service_account
   use_custom_node_sa     = var.use_custom_node_sa
+  secret_ids             = var.secret_ids
 }
