@@ -1,3 +1,8 @@
+moved {
+  from = module.cloud_storage[0]
+  to   = module.cloud_storage
+}
+
 module "cloud_storage" {
   source        = "../../../modules/cloud_storage"
   project_id    = var.project_id

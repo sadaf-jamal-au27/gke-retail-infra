@@ -23,6 +23,12 @@ variable "k8s_service_account" {
   default = "retail-app"
 }
 
+variable "use_custom_node_sa" {
+  type        = bool
+  description = "Attach gke-node-<env> to Autopilot. Existing clusters may force REPLACE — plan first."
+  default     = false
+}
+
 variable "assets_bucket_name" {
   type        = string
   description = "GCS assets bucket for object-level IAM. Defaults to {project}-retail-assets-{env}."

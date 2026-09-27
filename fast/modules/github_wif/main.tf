@@ -47,7 +47,9 @@ resource "google_project_iam_member" "ci_roles" {
   member   = "serviceAccount:${google_service_account.ci.email}"
 }
 
+
 # --- Bucket-level IAM (state + assets; least privilege overlay on storage.admin) ---
+
 data "google_storage_bucket" "terraform_state" {
   name = local.state_bucket
 }
@@ -68,6 +70,7 @@ resource "google_storage_bucket_iam_member" "ci_assets" {
   member = "serviceAccount:${google_service_account.ci.email}"
 }
 
+
 # --- Secret Manager project-level for CI (create/manage app secrets via Terraform) ---
 resource "google_project_iam_member" "ci_secret_admin" {
   count   = var.enable_secret_manager_admin ? 1 : 0
@@ -75,3 +78,4 @@ resource "google_project_iam_member" "ci_secret_admin" {
   role    = "roles/secretmanager.admin"
   member  = "serviceAccount:${google_service_account.ci.email}"
 }
+
