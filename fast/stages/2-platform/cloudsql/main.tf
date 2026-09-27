@@ -1,10 +1,3 @@
-# State was applied as module.cloudsql[0]. Module has its own providers,
-# so count is illegal — remap the address instead of destroying retail-dev-pg.
-moved {
-  from = module.cloudsql[0]
-  to   = module.cloudsql
-}
-
 data "terraform_remote_state" "network" {
   backend = "gcs"
 

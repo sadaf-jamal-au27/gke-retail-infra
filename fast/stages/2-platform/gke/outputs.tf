@@ -11,7 +11,7 @@ output "workload_gsa_email" {
 }
 
 output "node_gsa_email" {
-  value = module.gke.node_gsa_email
+  value = try(module.gke[0].node_gsa_email, null)
 }
 
 output "cluster_location" {

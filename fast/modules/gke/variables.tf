@@ -23,7 +23,6 @@ variable "k8s_service_account" {
   default = "retail-app"
 }
 
-
 variable "use_custom_node_sa" {
   type        = bool
   description = "Attach gke-node-<env> to Autopilot. Existing clusters may force REPLACE — plan first."
@@ -32,21 +31,12 @@ variable "use_custom_node_sa" {
 
 variable "assets_bucket_name" {
   type        = string
-  description = "GCS assets bucket. Defaults to {project}-retail-assets-{env}."
-
-variable "assets_bucket_name" {
-  type        = string
   description = "GCS assets bucket for object-level IAM. Defaults to {project}-retail-assets-{env}."
-
   default     = null
 }
 
 variable "secret_ids" {
   type        = list(string)
-
-  description = "Secret Manager IDs to keep in state (retail-db-password, retail-app-config)."
-
   description = "Secret Manager secret IDs to create (if missing) and grant secretAccessor to the workload SA."
-
   default     = []
 }
