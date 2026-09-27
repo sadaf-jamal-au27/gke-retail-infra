@@ -10,6 +10,10 @@ output "workload_gsa_email" {
   value = module.gke.workload_gsa_email
 }
 
+output "node_gsa_email" {
+  value = module.gke.node_gsa_email
+}
+
 output "cluster_location" {
   value = module.gke.cluster_location
 }

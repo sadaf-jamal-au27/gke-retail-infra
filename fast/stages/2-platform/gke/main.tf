@@ -20,4 +20,5 @@ module "gke" {
   master_authorized_cidr  = var.master_authorized_cidr
   k8s_namespace           = var.k8s_namespace
   k8s_service_account     = var.k8s_service_account
+  use_custom_node_sa      = var.use_custom_node_sa
 }

@@ -10,6 +10,10 @@ output "workload_gsa_email" {
   value = google_service_account.workload.email
 }
 
+output "node_gsa_email" {
+  value = google_service_account.node.email
+}
+
 output "cluster_location" {
   value = var.region
 }

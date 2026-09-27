@@ -30,3 +30,8 @@ variable "k8s_service_account" {
   type    = string
   default = "retail-app"
 }
+
+variable "use_custom_node_sa" {
+  type    = bool
+  default = false
+}

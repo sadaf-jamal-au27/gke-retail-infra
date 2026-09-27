@@ -22,3 +22,9 @@ variable "k8s_service_account" {
   type    = string
   default = "retail-app"
 }
+
+variable "use_custom_node_sa" {
+  type        = bool
+  description = "Attach gke-node-<env> to Autopilot. Existing clusters may force REPLACE — plan first."
+  default     = false
+}
