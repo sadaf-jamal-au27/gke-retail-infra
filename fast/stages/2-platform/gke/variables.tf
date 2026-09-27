@@ -35,6 +35,7 @@ variable "k8s_service_account" {
   default = "retail-app"
 }
 
+
 variable "use_custom_node_sa" {
   type    = bool
   default = false
@@ -43,11 +44,20 @@ variable "use_custom_node_sa" {
 variable "assets_bucket_name" {
   type        = string
   description = "GCS assets bucket. Null = {project}-retail-assets-{env}."
+
+variable "assets_bucket_name" {
+  type        = string
+  description = "GCS assets bucket for workload objectAdmin. Null = {project}-retail-assets-{env}."
+
   default     = null
 }
 
 variable "secret_ids" {
   type        = list(string)
+
   description = "Secret Manager IDs to keep (must match live state)."
+
+  description = "Secret Manager IDs to create and grant to the workload SA."
+
   default     = []
 }

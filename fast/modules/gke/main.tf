@@ -10,6 +10,8 @@ resource "google_service_account" "workload" {
   display_name = "Retail GKE Workload Identity (${var.env})"
 }
 
+# Project-level IAM — CI SA (roles/editor) cannot setIamPolicy on project / AR / secrets.
+# Keep these in Terraform so apply does not try to delete imported bindings (403).
 resource "google_project_iam_member" "workload_pubsub" {
   project = var.project_id
   role    = "roles/pubsub.publisher"
@@ -38,6 +40,37 @@ resource "google_project_iam_member" "workload_artifact_registry" {
   project = var.project_id
   role    = "roles/artifactregistry.reader"
   member  = "serviceAccount:${google_service_account.workload.email}"
+}
+
+# Bucket-level IAM (storage.admin on CI can usually set bucket policy).
+locals {
+  assets_bucket = coalesce(var.assets_bucket_name, "${var.project_id}-retail-assets-${var.env}")
+}
+
+data "google_storage_bucket" "assets" {
+  name = local.assets_bucket
+}
+
+resource "google_storage_bucket_iam_member" "workload_assets" {
+  bucket = data.google_storage_bucket.assets.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.workload.email}"
+}
+
+# Optional secrets (create only). IAM stays project-level secretAccessor above —
+# CI cannot secretmanager.secrets.setIamPolicy without Secret Admin / Owner.
+resource "google_secret_manager_secret" "app" {
+  for_each  = toset(var.secret_ids)
+  project   = var.project_id
+  secret_id = each.value
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    env = var.env
+  }
 }
 
 resource "google_container_cluster" "primary" {
