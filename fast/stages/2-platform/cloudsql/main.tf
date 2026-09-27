@@ -1,3 +1,10 @@
+# State was applied as module.cloudsql[0]. Module has its own providers,
+# so count is illegal — remap the address instead of destroying retail-dev-pg.
+moved {
+  from = module.cloudsql[0]
+  to   = module.cloudsql
+}
+
 data "terraform_remote_state" "network" {
   backend = "gcs"
 
@@ -7,20 +14,12 @@ data "terraform_remote_state" "network" {
   }
 }
 
-locals {
-  network_id            = try(data.terraform_remote_state.network.outputs.network_id, null)
-  network_outputs_ready = local.network_id != null
-}
-
-# Live state is module.cloudsql[0]. Keep count so retail-dev-pg is not destroyed.
 module "cloudsql" {
-  count = local.network_outputs_ready ? 1 : 0
-
   source            = "../../../modules/cloudsql"
   project_id        = var.project_id
   region            = var.region
   env               = var.env
-  network_id        = local.network_id
+  network_id        = data.terraform_remote_state.network.outputs.network_id
   database_password = var.database_password
   tier              = var.tier
   availability_type = var.availability_type

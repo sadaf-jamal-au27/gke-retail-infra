@@ -1,19 +1,19 @@
 output "cluster_name" {
-  value = try(module.gke[0].cluster_name, null)
+  value = module.gke.cluster_name
 }
 
 output "artifact_registry_url" {
-  value = try(module.gke[0].artifact_registry_url, null)
+  value = module.gke.artifact_registry_url
 }
 
 output "workload_gsa_email" {
-  value = try(module.gke[0].workload_gsa_email, null)
+  value = module.gke.workload_gsa_email
 }
 
 output "node_gsa_email" {
-  value = try(module.gke[0].node_gsa_email, null)
+  value = module.gke.node_gsa_email
 }
 
 output "cluster_location" {
-  value = try(module.gke[0].cluster_location, null)
+  value = module.gke.cluster_location
 }
