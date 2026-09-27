@@ -1,3 +1,10 @@
+# State was applied with count = 1 (module.cloudsql[0]).
+# Without this, plan destroys retail-dev-pg and recreates it.
+moved {
+  from = module.cloudsql[0]
+  to   = module.cloudsql
+}
+
 data "terraform_remote_state" "network" {
   backend = "gcs"
 

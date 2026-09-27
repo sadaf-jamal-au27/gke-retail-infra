@@ -1,3 +1,8 @@
+moved {
+  from = module.network[0]
+  to   = module.network
+}
+
 module "network" {
   source                    = "../../../modules/network"
   project_id                = var.project_id
