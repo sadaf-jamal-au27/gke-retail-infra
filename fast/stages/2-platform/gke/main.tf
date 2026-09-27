@@ -1,3 +1,10 @@
+# State was applied when this module used count = 1 (module.gke[0]).
+# Without this, plan destroys the live cluster and recreates module.gke.
+moved {
+  from = module.gke[0]
+  to   = module.gke
+}
+
 data "terraform_remote_state" "network" {
   backend = "gcs"
 

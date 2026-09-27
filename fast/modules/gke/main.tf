@@ -83,17 +83,12 @@ resource "google_container_cluster" "primary" {
       start_time = "03:00"
     }
   }
+}
 
-  # Optional: Autopilot nodes use gke-node-<env> instead of the default Compute SA.
-  # Keep false on an already-created cluster until `terraform plan` shows no replace.
-  dynamic "cluster_autoscaling" {
-    for_each = var.use_custom_node_sa ? [1] : []
-    content {
-      auto_provisioning_defaults {
-        service_account = google_service_account.node.email
-      }
-    }
-  }
+resource "google_storage_bucket_iam_member" "workload_assets" {
+  bucket = "${var.project_id}-retail-assets-${var.env}"
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.workload.email}"
 }
 
 resource "google_service_account_iam_member" "workload_identity" {
