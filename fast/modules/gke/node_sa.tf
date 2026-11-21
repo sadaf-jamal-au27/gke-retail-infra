@@ -1,5 +1,12 @@
+
 # Least-privilege node identity. Do not use the default Compute Engine SA
 # (it often has roles/editor). Nodes only pull images and write telemetry.
+
+# Least-privilege node identity. Terraform creates the SA and lets the GKE
+# robot impersonate it. Project / Artifact Registry IAM stays out of this
+# module: CI (roles/editor) cannot setIamPolicy on the project or AR repo (403).
+# Owner grants those once — see scripts/grant-gke-node-sa-iam.sh
+
 
 data "google_project" "current" {
   project_id = var.project_id
@@ -10,6 +17,7 @@ resource "google_service_account" "node" {
   display_name = "GKE node (${var.env})"
   description  = "Autopilot node SA: pull Artifact Registry images, write logs/metrics."
 }
+
 
 resource "google_project_iam_member" "node_roles" {
   for_each = toset([
@@ -32,6 +40,9 @@ resource "google_artifact_registry_repository_iam_member" "node_pull" {
 }
 
 # GKE control plane must be allowed to attach this SA to nodes.
+
+# SA-level IAM — CI has roles/iam.serviceAccountAdmin, so this apply works.
+
 resource "google_service_account_iam_member" "node_used_by_gke" {
   service_account_id = google_service_account.node.name
   role               = "roles/iam.serviceAccountUser"

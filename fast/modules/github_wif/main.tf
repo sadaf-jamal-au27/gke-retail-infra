@@ -47,6 +47,7 @@ resource "google_project_iam_member" "ci_roles" {
   member   = "serviceAccount:${google_service_account.ci.email}"
 }
 
+
 # --- Bucket-level IAM (state + assets; least privilege overlay on storage.admin) ---
 
 data "google_storage_bucket" "terraform_state" {

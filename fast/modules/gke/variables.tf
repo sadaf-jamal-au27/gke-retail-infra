@@ -29,6 +29,7 @@ variable "use_custom_node_sa" {
   description = "Attach gke-node-<env> to Autopilot. Existing clusters may force REPLACE — plan first."
   default     = false
 
+
 variable "assets_bucket_name" {
   type        = string
   description = "GCS assets bucket for object-level IAM. Defaults to {project}-retail-assets-{env}."
