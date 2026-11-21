@@ -37,12 +37,19 @@ variable "terraform_roles" {
 
 variable "state_bucket_name" {
   type        = string
+
   description = "Terraform state bucket for bucket-level IAM. Defaults to {project}-retail-tfstate-{env}."
+
   default     = null
 }
 
 variable "assets_bucket_name" {
   type        = string
+
+  description = "Assets bucket. Defaults to {project}-retail-assets-{env}."
+  default     = null
+}
+
   description = "Assets bucket for bucket-level IAM. Defaults to {project}-retail-assets-{env}."
   default     = null
 }
@@ -52,3 +59,4 @@ variable "enable_secret_manager_admin" {
   description = "Grant roles/secretmanager.admin to CI SA. Default false — CI cannot self-grant this (403); use Owner once if needed."
   default     = false
 }
+
